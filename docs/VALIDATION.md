@@ -6,8 +6,9 @@ Validated on 2026-08-31 from a non-FileProvider macOS workspace.
 
 ```text
 ruff: all checks passed
-pytest: 12 passed
+pytest: 14 passed
 package: sdist and wheel build successfully
+dashboard: lint and production build succeed
 ```
 
 The suite covers:
@@ -21,6 +22,7 @@ The suite covers:
 - Model-free initialization and compact agent briefs.
 - H3RETIK job creation/result ingestion through a mocked adapter.
 - The exported MCP tool surface.
+- Dashboard snapshot mapping and local read-only API behavior.
 
 ## MCP transport
 

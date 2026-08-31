@@ -246,6 +246,8 @@ dependencies = [
     { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
     { name = "sibyl-memory-client" },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -265,6 +267,8 @@ requires-dist = [
     { name = "respx", marker = "extra == 'dev'", specifier = ">=0.22,<1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12,<1" },
     { name = "sibyl-memory-client", specifier = "==0.7.0" },
+    { name = "starlette", specifier = ">=0.47,<2" },
+    { name = "uvicorn", specifier = ">=0.35,<1" },
 ]
 provides-extras = ["dev"]
 

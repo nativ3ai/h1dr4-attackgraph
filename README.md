@@ -34,6 +34,11 @@ structured handoff: confirmed facts, open hypotheses, exhausted paths, pending
 actions, regression checks, and evidence provenance. A fresh agent session can
 continue where the previous one stopped.
 
+The local ATTACKGRAPH dashboard gives the human operator the same shared brain:
+an interactive attack topology, confidence-separated intelligence, exhausted
+paths, evidence chronology, H3RETIK action review, regressions, and JSON export.
+It is read-only and binds locally by default.
+
 ## Safety modes
 
 | Mode | Intended use | Command behavior |
@@ -84,6 +89,17 @@ Start with these MCP calls:
 4. `attackgraph_request_action` before any active test
 5. `attackgraph_create_regression` after a finding is confirmed
 
+### Run the dashboard
+
+```bash
+./scripts/run-dashboard.sh
+```
+
+Open `http://localhost:3000`. The API and interface read the database selected
+by `ATTACKGRAPH_DB_PATH` and the tenant selected by
+`ATTACKGRAPH_OPERATOR_ID`. Both services bind to the local machine; engagement
+data is not deployed to a hosted dashboard.
+
 ## Sibyl is the product, not a log sink
 
 Sibyl provides both sides of the attack brain:
@@ -129,6 +145,9 @@ without hard-coding a rapidly changing catalog.
 uv sync --extra dev
 uv run ruff check .
 uv run pytest
+npm --prefix dashboard install
+npm --prefix dashboard run lint
+npm --prefix dashboard run build
 ```
 
 See [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) for the hackathon demo and
