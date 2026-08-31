@@ -43,8 +43,9 @@ continue where the previous one stopped.
 | `autonomous_lab` | Owned/authorized sandbox targets | H3RETIK dispatch only after human approval |
 
 Every action is checked against an exact target allowlist and allowed execution
-lanes. Destructive commands are denied. ATTACKGRAPH never accepts H3RETIK terms,
-buys compute, or submits arena answers on the user's behalf.
+lanes. Actions marked destructive and known destructive command patterns are
+denied. ATTACKGRAPH never accepts H3RETIK terms, buys compute, or submits arena
+answers on the user's behalf.
 
 ## Quick start
 
@@ -131,7 +132,8 @@ uv run pytest
 ```
 
 See [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) for the hackathon demo and
-[PRIOR_WORK.md](PRIOR_WORK.md) for the build-window disclosure.
+[PRIOR_WORK.md](PRIOR_WORK.md) for the build-window disclosure. Current test and
+live-adapter evidence is recorded in [docs/VALIDATION.md](docs/VALIDATION.md).
 
 ## Status
 
@@ -139,4 +141,3 @@ Hackathon prototype. Use only on systems you own or are explicitly authorized
 to test. The server does not make authorization decisions for you.
 
 MIT License.
-
