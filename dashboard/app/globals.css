@@ -193,8 +193,7 @@ button { font: inherit; }
 .scopebar .scope-status { height: 100%; margin-right: -22px; padding: 0 22px; border-left: 1px solid rgba(255,118,87,.45); color: var(--coral); background: rgba(255,118,87,.06); }
 .scope-status i { border-color: var(--coral); box-shadow: 0 0 12px rgba(255,118,87,.45); }
 
-.command-strip { height: 42px; display: grid; grid-template-columns: 48px auto minmax(180px, 340px) 88px 1fr; align-items: stretch; border-bottom: 1px solid var(--line-strong); background: #080b08; }
-.skull-sigil { display: grid; place-items: center; margin: 0; padding-top: 5px; border-right: 1px solid var(--line-strong); color: var(--coral); font: 700 6px/1.05 var(--font-geist-mono); text-align: center; }
+.command-strip { height: 42px; display: grid; grid-template-columns: auto minmax(180px, 340px) 88px 1fr; align-items: stretch; border-bottom: 1px solid var(--line-strong); background: #080b08; }
 .command-tabs { display: flex; align-items: stretch; }
 .command-tabs button { position: relative; min-width: 128px; border: 0; border-right: 1px solid var(--line-strong); background: transparent; color: #7f8a79; padding: 0 13px; font: 700 7px var(--font-geist-mono); letter-spacing: .05em; cursor: pointer; }
 .command-tabs button:hover { color: var(--ink); background: rgba(199,255,74,.035); }
@@ -261,8 +260,6 @@ button { font: inherit; }
 .map-index span { color: var(--coral); font: 700 7px var(--font-geist-mono); letter-spacing: .13em; }
 .map-index strong { margin-top: 5px; color: #bac3ae; font: 800 11px var(--font-geist-mono); letter-spacing: .08em; }
 .map-index small { margin-top: 5px; color: var(--faint); font: 7px var(--font-geist-mono); }
-.ascii-warden { position: absolute; z-index: 0; right: 5%; top: 20%; margin: 0; color: rgba(199,255,74,.075); font: 700 9px/1.08 var(--font-geist-mono); letter-spacing: .08em; text-align: center; transform: scale(1.35); transform-origin: top right; pointer-events: none; }
-.ascii-warden::after { content: 'WARDEN//PASSIVE'; display: block; margin-top: 5px; color: rgba(255,118,87,.5); font-size: 5px; letter-spacing: .2em; }
 .coordinate-rail { position: absolute; z-index: 2; color: rgba(143,155,135,.35); font: 6px var(--font-geist-mono); pointer-events: none; }
 .coordinate-x { top: 8px; left: 130px; right: 20px; overflow: hidden; white-space: nowrap; letter-spacing: .18em; }
 .coordinate-y { top: 95px; left: 7px; line-height: 38px; }
@@ -285,7 +282,7 @@ button { font: inherit; }
 .graph-node.action { border-color: rgba(255,118,87,.62); }
 .graph-node.action .node-core { border-color: var(--coral); box-shadow: 0 0 12px rgba(255,118,87,.4); }
 .no-results { position: absolute; z-index: 3; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
-.no-results::before { content: '[ x_x ]'; color: var(--coral); font: 800 24px var(--font-geist-mono); }
+.no-results::before { content: 'FILTER::EMPTY'; color: var(--coral); font: 800 11px var(--font-geist-mono); letter-spacing: .12em; }
 .no-results strong { margin-top: 10px; color: var(--ink); font: 800 11px var(--font-geist-mono); }
 .no-results span { margin-top: 6px; color: var(--muted); font: 7px var(--font-geist-mono); text-transform: uppercase; }
 
@@ -353,7 +350,7 @@ button { font: inherit; }
   .workspace { grid-template-columns: 270px minmax(440px, 1fr); }
   .topbar { grid-template-columns: 300px 1fr 230px; }
   .panel-heading::after { right: 225px; }
-  .command-strip { grid-template-columns: 48px auto minmax(170px, 1fr) 78px; }
+  .command-strip { grid-template-columns: auto minmax(170px, 1fr) 78px; }
   .keymap { display: none; }
   .operations-column { display: block; position: fixed; z-index: 70; top: 0; right: 0; bottom: 0; width: min(380px, 92vw); border-left: 1px solid var(--coral); background: #070a07; transform: translateX(105%); transition: transform .2s ease; box-shadow: -24px 0 60px rgba(0,0,0,.55); }
   .operations-column.open { transform: translateX(0); }
@@ -372,14 +369,13 @@ button { font: inherit; }
   .engagement-switcher::after { bottom: 10px; }
   .engagement-switcher > span { display: none; }
   .engagement-switcher select { margin: 0; font-size: 10px; }
-  .command-strip { height: auto; min-height: 76px; grid-template-columns: 36px 1fr 74px; grid-template-rows: 38px 38px; }
-  .skull-sigil { grid-row: 1 / 3; font-size: 5px; }
-  .command-tabs { grid-column: 2 / 4; }
+  .command-strip { height: auto; min-height: 76px; grid-template-columns: 1fr 74px; grid-template-rows: 38px 38px; }
+  .command-tabs { grid-column: 1 / 3; }
   .command-tabs button { flex: 1; min-width: 0; padding: 0 5px; font-size: 6px; }
   .command-tabs kbd { width: 15px; height: 15px; margin-right: 2px; }
   .command-tabs button b { display: none; }
-  .command-search { grid-column: 2; grid-row: 2; margin: 5px 6px; }
-  .result-state { grid-column: 3; grid-row: 2; }
+  .command-search { grid-column: 1; grid-row: 2; margin: 5px 6px; }
+  .result-state { grid-column: 2; grid-row: 2; }
   .workspace { height: auto; }
   .panel-heading { padding: 0 14px; }
   .panel-heading h1 { font-size: 14px; }

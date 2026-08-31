@@ -130,7 +130,6 @@ export default function Home() {
       </section>
 
       <nav className="command-strip" aria-label="Workspace commands">
-        <pre className="skull-sigil" aria-hidden="true">{` .---.\n| x x |\n'--|--'`}</pre>
         <div className="command-tabs">
           <button type="button" className={view === 'graph' ? 'active' : ''} onClick={() => setView('graph')}><kbd>G</kbd> SURFACE MAP</button>
           <button type="button" className={view === 'timeline' ? 'active' : ''} onClick={() => setView('timeline')}><kbd>T</kbd> MEMORY LOG</button>
@@ -178,7 +177,6 @@ export default function Home() {
             <div className="graph-canvas">
               <div className="grid-lines" />
               <div className="map-index" aria-hidden="true"><span>SYS.MAP / 06</span><strong>GLASSHOUSE</strong><small>X.49 / Y.42 / Z.00</small></div>
-              <pre className="ascii-warden" aria-hidden="true">{`      .--------.\n    .'  x    x  '.\n   /      /\\      \\\n  |    .------.    |\n   \\   '----'   /\n    '.___||||__.'\n       /_||||_\\`}</pre>
               <div className="coordinate-rail coordinate-x" aria-hidden="true">00····10····20····30····40····50····60····70····80····90····99</div>
               <div className="coordinate-rail coordinate-y" aria-hidden="true">00<br />·<br />20<br />·<br />40<br />·<br />60<br />·<br />80<br />·<br />99</div>
               <div className="graph-stage" style={{ transform: `scale(${zoom})` }}>
