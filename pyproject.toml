@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "h1dr4-attackgraph"
+version = "0.1.0"
+description = "A model-agnostic MCP attack brain backed by Sibyl Memory and gated H3RETIK Kali workers"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "nativ3ai" }]
+dependencies = [
+  "httpx>=0.28,<1",
+  "mcp[cli]>=1.13,<2",
+  "sibyl-memory-client==0.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2",
+  "respx>=0.22,<1",
+  "ruff>=0.12,<1",
+]
+
+[project.scripts]
+h1dr4-attackgraph = "h1dr4_attackgraph.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/h1dr4_attackgraph"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
