@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fallbackSnapshot, type Action, type Engagement, type GraphNode, type MemoryEvent, type Snapshot } from './model';
 
 type Connection = 'connecting' | 'live' | 'preview' | 'error';
@@ -13,6 +13,10 @@ export default function Home() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [view, setView] = useState<'graph' | 'timeline'>('graph');
   const [zoom, setZoom] = useState(1);
+  const [query, setQuery] = useState('');
+  const [showOperations, setShowOperations] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const operationsRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,9 +59,50 @@ export default function Home() {
     return () => { cancelled = true; window.clearTimeout(kickoff); window.clearInterval(timer); };
   }, [engagementId]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const isField = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement;
+      if (event.key === 'Escape') {
+        setSelectedNode(null);
+        setShowOperations(false);
+        setQuery('');
+        searchRef.current?.blur();
+        return;
+      }
+      if (isField) return;
+      if (event.key === '/') { event.preventDefault(); searchRef.current?.focus(); }
+      if (event.key.toLowerCase() === 'g') setView('graph');
+      if (event.key.toLowerCase() === 't') setView('timeline');
+      if (event.key.toLowerCase() === 'a') {
+        if (window.matchMedia('(min-width: 781px) and (max-width: 1180px)').matches) setShowOperations(true);
+        window.setTimeout(() => operationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+      }
+      if (event.key === '+' || event.key === '=') setZoom((value) => Math.min(1.35, value + .1));
+      if (event.key === '-') setZoom((value) => Math.max(.72, value - .1));
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const nodeById = useMemo(() => Object.fromEntries(snapshot.nodes.map((node) => [node.id, node])), [snapshot.nodes]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleNodes = useMemo(() => normalizedQuery ? snapshot.nodes.filter((node) => `${node.label} ${node.meta} ${node.kind}`.toLowerCase().includes(normalizedQuery)) : snapshot.nodes, [normalizedQuery, snapshot.nodes]);
+  const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
+  const visibleEvents = useMemo(() => normalizedQuery ? snapshot.events.filter((event) => `${event.title} ${event.detail} ${event.type}`.toLowerCase().includes(normalizedQuery)) : snapshot.events, [normalizedQuery, snapshot.events]);
+  const visibleSelectedNode = selectedNode && visibleNodeIds.has(selectedNode.id) ? selectedNode : null;
   const scope = snapshot.engagement.allowed_lanes.join(', ');
   const action = snapshot.primary_action;
+  const openActionQueue = () => {
+    if (window.matchMedia('(min-width: 781px) and (max-width: 1180px)').matches) setShowOperations(true);
+    window.setTimeout(() => operationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  };
+  const reviewAction = () => {
+    setView('graph');
+    const node = snapshot.nodes.find((item) => item.id === action?.id);
+    if (node) setSelectedNode(node);
+    setShowOperations(false);
+  };
 
   return (
     <main className="shell">
@@ -74,7 +119,7 @@ export default function Home() {
             {engagements.map((engagement) => <option value={engagement.engagement_id} key={engagement.engagement_id}>{engagement.title}</option>)}
           </select>
         </label>
-        <div className={`system-state ${connection}`}><span className="pulse" /><div><strong>{connection === 'live' ? 'SIBYL::ONLINE' : connection === 'connecting' ? 'LINK::PENDING' : 'LOCAL::PREVIEW'}</strong><span>{connection === 'live' ? `memory_sync / ${formatTime(snapshot.memory.last_event)}Z` : 'awaiting local memory bus'}</span></div></div>
+        <div className={`system-state ${connection}`}><span className="pulse" /><div><strong>{connection === 'live' ? 'SIBYL::ONLINE' : connection === 'connecting' ? 'LINK::PENDING' : connection === 'error' ? 'LINK::ERROR' : 'LOCAL::PREVIEW'}</strong><span>{connection === 'live' ? `memory_sync / ${formatTime(snapshot.memory.last_event)}Z` : connection === 'error' ? 'last snapshot retained / retrying' : 'awaiting local memory bus'}</span></div></div>
       </header>
 
       <section className="scopebar">
@@ -83,6 +128,22 @@ export default function Home() {
         <div className="scope-wide"><span>/ AUTHORIZED SCOPE</span><strong>{snapshot.engagement.scope} :: {scope}</strong></div>
         <div className="scope-status"><i /> [ SCOPE::VERIFIED ]</div>
       </section>
+
+      <nav className="command-strip" aria-label="Workspace commands">
+        <pre className="skull-sigil" aria-hidden="true">{` .---.\n| x x |\n'--|--'`}</pre>
+        <div className="command-tabs">
+          <button type="button" className={view === 'graph' ? 'active' : ''} onClick={() => setView('graph')}><kbd>G</kbd> SURFACE MAP</button>
+          <button type="button" className={view === 'timeline' ? 'active' : ''} onClick={() => setView('timeline')}><kbd>T</kbd> MEMORY LOG</button>
+          <button type="button" className={showOperations ? 'active alert' : 'alert'} disabled={!action} onClick={openActionQueue}><kbd>A</kbd> ACTION QUEUE <b>{action ? '01' : '00'}</b></button>
+        </div>
+        <label className="command-search">
+          <span>/</span>
+          <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={view === 'graph' ? 'FILTER NODES' : 'FILTER MEMORY'} aria-label={view === 'graph' ? 'Filter graph nodes' : 'Filter memory events'} />
+          {query && <button type="button" onClick={() => setQuery('')} aria-label="Clear filter">[X]</button>}
+        </label>
+        <div className="result-state" aria-live="polite"><strong>{view === 'graph' ? `${pad(visibleNodes.length)}/${pad(snapshot.nodes.length)}` : `${pad(visibleEvents.length)}/${pad(snapshot.events.length)}`}</strong><span>{view === 'graph' ? 'NODES VISIBLE' : 'EVENTS VISIBLE'}</span></div>
+        <div className="keymap"><span>KEYS//</span><b>G</b><b>T</b><b>/</b><b>+/−</b><b>ESC</b></div>
+      </nav>
 
       <div className="workspace">
         <aside className="intel-column">
@@ -117,28 +178,32 @@ export default function Home() {
             <div className="graph-canvas">
               <div className="grid-lines" />
               <div className="map-index" aria-hidden="true"><span>SYS.MAP / 06</span><strong>GLASSHOUSE</strong><small>X.49 / Y.42 / Z.00</small></div>
+              <pre className="ascii-warden" aria-hidden="true">{`      .--------.\n    .'  x    x  '.\n   /      /\\      \\\n  |    .------.    |\n   \\   '----'   /\n    '.___||||__.'\n       /_||||_\\`}</pre>
               <div className="coordinate-rail coordinate-x" aria-hidden="true">00····10····20····30····40····50····60····70····80····90····99</div>
               <div className="coordinate-rail coordinate-y" aria-hidden="true">00<br />·<br />20<br />·<br />40<br />·<br />60<br />·<br />80<br />·<br />99</div>
               <div className="graph-stage" style={{ transform: `scale(${zoom})` }}>
                 <svg className="edges" aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  {snapshot.edges.map((edge) => nodeById[edge.from] && nodeById[edge.to] ? <line key={`${edge.from}-${edge.to}`} x1={nodeById[edge.from].x} y1={nodeById[edge.from].y} x2={nodeById[edge.to].x} y2={nodeById[edge.to].y} /> : null)}
+                  {snapshot.edges.map((edge) => nodeById[edge.from] && nodeById[edge.to] && visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to) ? <line key={`${edge.from}-${edge.to}`} x1={nodeById[edge.from].x} y1={nodeById[edge.from].y} x2={nodeById[edge.to].x} y2={nodeById[edge.to].y} /> : null)}
                 </svg>
-                {snapshot.nodes.map((node, index) => (
-                  <button className={`graph-node ${node.kind} ${selectedNode?.id === node.id ? 'selected' : ''}`} data-kind={node.kind} key={node.id} style={{ left: `${node.x}%`, top: `${node.y}%` }} type="button" onClick={() => setSelectedNode(node)}>
-                    <span className="node-core" /><span className="node-index">N::{pad(index + 1)}</span><strong>{node.label}</strong><small>{node.meta}</small>
+                {visibleNodes.map((node) => (
+                  <button className={`graph-node ${node.kind} ${visibleSelectedNode?.id === node.id ? 'selected' : ''}`} aria-label={`Inspect ${node.label}: ${node.meta}`} data-kind={node.kind} key={node.id} style={{ left: `${node.x}%`, top: `${node.y}%` }} type="button" onClick={() => setSelectedNode(node)}>
+                    <span className="node-core" aria-hidden="true" />
+                    <span className="node-index">N::{pad(snapshot.nodes.findIndex((item) => item.id === node.id) + 1)}</span><strong>{node.label}</strong><small>{node.meta}</small>
                   </button>
                 ))}
               </div>
+              {!visibleNodes.length && <div className="no-results"><strong>NO NODES MATCH</strong><span>clear filter or press ESC</span></div>}
               <div className="graph-legend"><span><i className="legend-confirmed" /> [C] Confirmed</span><span><i className="legend-hypothesis" /> [?] Hypothesis</span><span><i className="legend-regression" /> [R] Regression</span></div>
-              {selectedNode && <NodeInspector node={selectedNode} onClose={() => setSelectedNode(null)} />}
+              {visibleSelectedNode && <NodeInspector node={visibleSelectedNode} onClose={() => setSelectedNode(null)} />}
             </div>
-          ) : <CentralTimeline events={snapshot.events} />}
+          ) : <CentralTimeline events={visibleEvents} />}
 
           <div className="memory-directive"><span>SIBYL::DIRECTIVE</span><p><b>root@attackgraph:~$</b> {snapshot.brief.agent_instruction}<i aria-hidden="true" /></p></div>
         </section>
 
-        <aside className="operations-column">
-          <ActionCard action={action} onReview={() => { const node = snapshot.nodes.find((item) => item.id === action?.id); if (node) { setView('graph'); setSelectedNode(node); } }} />
+        <aside ref={operationsRef} className={`operations-column ${showOperations ? 'open' : ''}`}>
+          <button type="button" className="operations-close" onClick={() => setShowOperations(false)}>[X] CLOSE QUEUE</button>
+          <ActionCard action={action} onReview={reviewAction} />
           <section className="evidence-feed">
             <div className="section-label"><span>EVIDENCE STREAM</span><b>{connection === 'live' ? 'LIVE' : 'PREVIEW'}</b></div>
             {snapshot.events.slice(0, 5).map((event) => <TimelineItem event={event} key={event.id} />)}
@@ -149,6 +214,7 @@ export default function Home() {
           </section>
         </aside>
       </div>
+      {showOperations && <button type="button" className="ops-backdrop" aria-label="Close action queue" onClick={() => setShowOperations(false)} />}
 
       <footer className="statusbar">
         <span>ENGAGEMENT//<strong>{snapshot.engagement.engagement_id}</strong></span>
@@ -169,7 +235,7 @@ function IntelItem({ title, meta }: { title: string; meta: string }) { return <d
 function EmptyState({ text }: { text: string }) { return <p className="empty-state">{text}</p>; }
 
 function ActionCard({ action, onReview }: { action: Action | null; onReview: () => void }) {
-  return <section className="action-card"><div className="section-label"><span>ACTION::QUEUE</span><b>[{action ? '01' : '00'}]</b></div>{action ? <><div className="action-id"><span>{action.id.toUpperCase()}</span><em>{action.status.replaceAll('_', '::').toUpperCase()}</em></div><h2>{action.purpose}</h2><code><b>$</b> {action.command}<i aria-hidden="true" /></code><dl><div><dt>LANE//</dt><dd>{action.lane.toUpperCase()}</dd></div><div><dt>RUNTIME//</dt><dd>≤ {action.max_minutes} MIN</dd></div><div><dt>BUDGET//</dt><dd>{action.budget_usdc.toFixed(2)} USDC</dd></div></dl><button type="button" className="review-action" onClick={onReview}>[ ENTER ] REVIEW ACTION</button></> : <EmptyState text="No actions awaiting review" />}</section>;
+  return <section className="action-card"><div className="section-label"><span>ACTION::QUEUE</span><b>[{action ? '01' : '00'}]</b></div>{action ? <><div className="action-id"><span>{action.id.toUpperCase()}</span><em>{action.status.replaceAll('_', '::').toUpperCase()}</em></div><h2>{action.purpose}</h2><div className="execution-notice"><strong>READ-ONLY REVIEW</strong><span>No command runs from this screen.</span></div><code><b>$</b> {action.command}<i aria-hidden="true" /></code><dl><div><dt>LANE//</dt><dd>{action.lane.toUpperCase()}</dd></div><div><dt>RUNTIME//</dt><dd>≤ {action.max_minutes} MIN</dd></div><div><dt>BUDGET//</dt><dd>{action.budget_usdc.toFixed(2)} USDC</dd></div></dl><button type="button" className="review-action" onClick={onReview}>[ ENTER ] INSPECT ON MAP</button></> : <EmptyState text="No actions awaiting review" />}</section>;
 }
 
 function TimelineItem({ event }: { event: MemoryEvent }) {
