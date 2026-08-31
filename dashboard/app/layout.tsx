@@ -7,17 +7,17 @@ const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin']
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
-  title: 'H1DR4 ATTACKGRAPH',
-  description: 'Persistent operational memory for red-team agents.',
+  title: 'H1DR4//ATTACKGRAPH',
+  description: 'Persistent adversary memory for red-team agents.',
   openGraph: {
-    title: 'H1DR4 ATTACKGRAPH',
-    description: 'Persistent operational memory for red-team agents.',
-    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'H1DR4 ATTACKGRAPH' }],
+    title: 'H1DR4//ATTACKGRAPH',
+    description: 'Persistent adversary memory for red-team agents.',
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'H1DR4//ATTACKGRAPH' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'H1DR4 ATTACKGRAPH',
-    description: 'Persistent operational memory for red-team agents.',
+    title: 'H1DR4//ATTACKGRAPH',
+    description: 'Persistent adversary memory for red-team agents.',
     images: ['/og.png'],
   },
 };
