@@ -15,8 +15,11 @@ export default function Home() {
   const [zoom, setZoom] = useState(1);
   const [query, setQuery] = useState('');
   const [showOperations, setShowOperations] = useState(false);
+  const [showRawNode, setShowRawNode] = useState(false);
+  const [lastViewedAt, setLastViewedAt] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const operationsRef = useRef<HTMLElement>(null);
+  const initializedViews = useRef(new Set<string>());
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +53,16 @@ export default function Home() {
           return response.json() as Promise<Snapshot>;
         })
         .then((payload) => {
-          if (!cancelled) { setSnapshot(payload); setConnection('live'); }
+          if (!cancelled) {
+            const viewKey = `attackgraph:last-view:${engagementId}`;
+            if (!initializedViews.current.has(engagementId)) {
+              setLastViewedAt(window.localStorage.getItem(viewKey) || '');
+              initializedViews.current.add(engagementId);
+            }
+            window.localStorage.setItem(viewKey, payload.memory.last_event);
+            setSnapshot(payload);
+            setConnection('live');
+          }
         })
         .catch(() => { if (!cancelled) setConnection('error'); });
     };
@@ -66,6 +78,7 @@ export default function Home() {
       if (event.key === 'Escape') {
         setSelectedNode(null);
         setShowOperations(false);
+        setShowRawNode(false);
         setQuery('');
         searchRef.current?.blur();
         return;
@@ -91,16 +104,22 @@ export default function Home() {
   const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
   const visibleEvents = useMemo(() => normalizedQuery ? snapshot.events.filter((event) => `${event.title} ${event.detail} ${event.type}`.toLowerCase().includes(normalizedQuery)) : snapshot.events, [normalizedQuery, snapshot.events]);
   const visibleSelectedNode = selectedNode && visibleNodeIds.has(selectedNode.id) ? selectedNode : null;
+  const focusedNode = visibleSelectedNode || visibleNodes.find((node) => node.kind === 'target') || visibleNodes.at(0) || null;
   const scope = snapshot.engagement.allowed_lanes.join(', ');
   const action = snapshot.primary_action;
+  const latestEvent = snapshot.events.at(0);
+  const newEventCount = lastViewedAt ? snapshot.events.filter((event) => new Date(event.time) > new Date(lastViewedAt)).length : snapshot.events.length;
+  const topHypothesis = snapshot.brief.open_hypotheses.at(-1);
+  const currentObjective = action?.purpose || topHypothesis?.statement || 'Maintain a verified engagement brief';
   const openActionQueue = () => {
     if (window.matchMedia('(min-width: 781px) and (max-width: 1180px)').matches) setShowOperations(true);
     window.setTimeout(() => operationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   };
   const reviewAction = () => {
     setView('graph');
+    setQuery('');
     const node = snapshot.nodes.find((item) => item.id === action?.id);
-    if (node) setSelectedNode(node);
+    if (node) { setSelectedNode(node); setShowRawNode(false); }
     setShowOperations(false);
   };
 
@@ -114,7 +133,7 @@ export default function Home() {
         </div>
         <label className="engagement-switcher">
           <span>ACTIVE ENGAGEMENT</span>
-          <select value={engagementId} onChange={(event) => { setEngagementId(event.target.value); setSelectedNode(null); }}>
+          <select value={engagementId} onChange={(event) => { setConnection('connecting'); setLastViewedAt(''); setEngagementId(event.target.value); setSelectedNode(null); setShowRawNode(false); }}>
             {!engagements.length && <option value="">{snapshot.engagement.title}</option>}
             {engagements.map((engagement) => <option value={engagement.engagement_id} key={engagement.engagement_id}>{engagement.title}</option>)}
           </select>
@@ -144,13 +163,15 @@ export default function Home() {
         <div className="keymap"><span>KEYS//</span><b>G</b><b>T</b><b>/</b><b>+/−</b><b>ESC</b></div>
       </nav>
 
+      <section className="decision-band" aria-label="Current operator priorities">
+        <div className="decision-primary"><span>CURRENT OBJECTIVE</span><strong>{currentObjective}</strong><small>{snapshot.brief.agent_instruction}</small></div>
+        <div><span>CHANGED SINCE LAST VIEW</span><strong>{lastViewedAt ? `${newEventCount} NEW EVENT${newEventCount === 1 ? '' : 'S'}` : 'INITIAL SNAPSHOT'}</strong><small>{latestEvent ? `${latestEvent.title} · ${formatTime(latestEvent.time)}Z` : 'No events recorded'}</small></div>
+        <div><span>TOP OPEN QUESTION</span><strong className="decision-warn">{topHypothesis?.statement || 'No open hypotheses'}</strong></div>
+        <div className={action ? 'decision-operator needed' : 'decision-operator'}><span>OPERATOR NEEDED</span><strong>{action ? '1 ACTION AWAITING REVIEW' : 'NO HUMAN BLOCKERS'}</strong></div>
+      </section>
+
       <div className="workspace">
         <aside className="intel-column">
-          <section className="metric-strip">
-            <div><strong>{pad(snapshot.stats.nodes)}</strong><span>:: Nodes</span></div>
-            <div><strong>{pad(snapshot.stats.evidence)}</strong><span>:: Evidence</span></div>
-            <div><strong>{pad(snapshot.stats.pending)}</strong><span>:: Pending</span></div>
-          </section>
           <IntelSection title="Confirmed" count={String(snapshot.brief.confirmed.length)} tone="confirmed">
             {snapshot.brief.confirmed.slice(-4).reverse().map((item) => <IntelItem key={item.id} title={item.statement} meta={`${item.source} · confidence ${item.confidence.toFixed(2)}`} />)}
           </IntelSection>
@@ -165,12 +186,10 @@ export default function Home() {
         <section className="graph-panel">
           <div className="panel-heading">
             <div><span>{view === 'graph' ? '// LIVE TOPOLOGY' : '// SIBYL EVENT LOG'}</span><h1><em>&gt;_</em> {view === 'graph' ? 'TARGET ATTACK SURFACE' : 'ENGAGEMENT TIMELINE'}</h1></div>
-            <div className="graph-tools" aria-label="Graph controls">
-              <button type="button" className={view === 'graph' ? 'active' : ''} onClick={() => setView('graph')}>[G] GRAPH</button>
-              <button type="button" className={view === 'timeline' ? 'active' : ''} onClick={() => setView('timeline')}>[T] LOG</button>
+            {view === 'graph' && <div className="graph-tools" aria-label="Graph controls">
               <button type="button" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(.72, value - .1))}>[−]</button>
               <button type="button" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(1.35, value + .1))}>[+]</button>
-            </div>
+            </div>}
           </div>
 
           {view === 'graph' ? (
@@ -184,7 +203,7 @@ export default function Home() {
                   {snapshot.edges.map((edge) => nodeById[edge.from] && nodeById[edge.to] && visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to) ? <line key={`${edge.from}-${edge.to}`} x1={nodeById[edge.from].x} y1={nodeById[edge.from].y} x2={nodeById[edge.to].x} y2={nodeById[edge.to].y} /> : null)}
                 </svg>
                 {visibleNodes.map((node) => (
-                  <button className={`graph-node ${node.kind} ${visibleSelectedNode?.id === node.id ? 'selected' : ''}`} aria-label={`Inspect ${node.label}: ${node.meta}`} data-kind={node.kind} key={node.id} style={{ left: `${node.x}%`, top: `${node.y}%` }} type="button" onClick={() => setSelectedNode(node)}>
+                  <button className={`graph-node ${node.kind} ${visibleSelectedNode?.id === node.id ? 'selected' : ''}`} aria-label={`Inspect ${node.label}: ${node.meta}`} data-kind={node.kind} key={node.id} style={{ left: `${node.x}%`, top: `${node.y}%` }} type="button" onClick={() => { setSelectedNode(node); setShowRawNode(false); }}>
                     <span className="node-core" aria-hidden="true" />
                     <span className="node-index">N::{pad(snapshot.nodes.findIndex((item) => item.id === node.id) + 1)}</span><strong>{node.label}</strong><small>{node.meta}</small>
                   </button>
@@ -192,20 +211,17 @@ export default function Home() {
               </div>
               {!visibleNodes.length && <div className="no-results"><strong>NO NODES MATCH</strong><span>clear filter or press ESC</span></div>}
               <div className="graph-legend"><span><i className="legend-confirmed" /> [C] Confirmed</span><span><i className="legend-hypothesis" /> [?] Hypothesis</span><span><i className="legend-regression" /> [R] Regression</span></div>
-              {visibleSelectedNode && <NodeInspector node={visibleSelectedNode} onClose={() => setSelectedNode(null)} />}
+              {showRawNode && focusedNode && <NodeInspector node={focusedNode} onClose={() => setShowRawNode(false)} />}
             </div>
           ) : <CentralTimeline events={visibleEvents} />}
 
-          <div className="memory-directive"><span>SIBYL::DIRECTIVE</span><p><b>root@attackgraph:~$</b> {snapshot.brief.agent_instruction}<i aria-hidden="true" /></p></div>
+          <SelectedNodeDetail node={focusedNode} edges={snapshot.edges} onRaw={() => setShowRawNode(true)} />
         </section>
 
         <aside ref={operationsRef} className={`operations-column ${showOperations ? 'open' : ''}`}>
           <button type="button" className="operations-close" onClick={() => setShowOperations(false)}>[X] CLOSE QUEUE</button>
           <ActionCard action={action} onReview={reviewAction} />
-          <section className="evidence-feed">
-            <div className="section-label"><span>EVIDENCE STREAM</span><b>{connection === 'live' ? 'LIVE' : 'PREVIEW'}</b></div>
-            {snapshot.events.slice(0, 5).map((event) => <TimelineItem event={event} key={event.id} />)}
-          </section>
+          <TrustCard node={focusedNode} connection={connection} edges={snapshot.edges} />
           <section className="regression-card">
             <div className="section-label"><span>REGRESSION WATCH</span><b>{snapshot.brief.regressions.length}</b></div>
             {snapshot.brief.regressions.length ? snapshot.brief.regressions.slice(-2).reverse().map((item) => <div className="regression-row" key={item.id}><span className="check">✓</span><div><strong>{item.name}</strong><small>{item.expected}</small></div></div>) : <EmptyState text="No regression checks yet" />}
@@ -236,8 +252,22 @@ function ActionCard({ action, onReview }: { action: Action | null; onReview: () 
   return <section className="action-card"><div className="section-label"><span>ACTION::QUEUE</span><b>[{action ? '01' : '00'}]</b></div>{action ? <><div className="action-id"><span>{action.id.toUpperCase()}</span><em>{action.status.replaceAll('_', '::').toUpperCase()}</em></div><h2>{action.purpose}</h2><div className="execution-notice"><strong>READ-ONLY REVIEW</strong><span>No command runs from this screen.</span></div><code><b>$</b> {action.command}<i aria-hidden="true" /></code><dl><div><dt>LANE//</dt><dd>{action.lane.toUpperCase()}</dd></div><div><dt>RUNTIME//</dt><dd>≤ {action.max_minutes} MIN</dd></div><div><dt>BUDGET//</dt><dd>{action.budget_usdc.toFixed(2)} USDC</dd></div></dl><button type="button" className="review-action" onClick={onReview}>[ ENTER ] INSPECT ON MAP</button></> : <EmptyState text="No actions awaiting review" />}</section>;
 }
 
-function TimelineItem({ event }: { event: MemoryEvent }) {
-  return <div className={`timeline-item ${eventTone(event.type)}`}><time>{formatTime(event.time)}</time><i /><div><strong>{event.title}</strong><small>{event.detail}</small></div></div>;
+function SelectedNodeDetail({ node, edges, onRaw }: { node: GraphNode | null; edges: { from: string; to: string }[]; onRaw: () => void }) {
+  if (!node) return <section className="selected-detail"><div><span>SELECTED NODE</span><strong>No node matches the current filter</strong></div></section>;
+  const detail = recordOf(node.detail);
+  const source = textField(detail, 'source') || textField(detail, 'job_id') || 'Sibyl engagement memory';
+  const status = textField(detail, 'status') || textField(detail, 'kind') || node.kind;
+  const confidence = numberField(detail, 'confidence');
+  const related = edges.filter((edge) => edge.from === node.id || edge.to === node.id).length;
+  return <section className="selected-detail" aria-label="Selected node evidence"><div className="selected-main"><span>SELECTED NODE EXPLANATION</span><strong>{node.label}</strong><small>{node.meta}</small></div><div><span>PROVENANCE</span><strong>{source}</strong></div><div><span>TRUST</span><strong>{confidence === null ? status.toUpperCase() : `${Math.round(confidence * 100)}% CONFIDENCE`}</strong></div><div><span>RELATED</span><strong>{related} GRAPH LINK{related === 1 ? '' : 'S'}</strong></div><button type="button" onClick={onRaw}>RAW RECORD</button></section>;
+}
+
+function TrustCard({ node, connection, edges }: { node: GraphNode | null; connection: Connection; edges: { from: string; to: string }[] }) {
+  const detail = recordOf(node?.detail);
+  const source = textField(detail, 'source') || textField(detail, 'job_id') || 'Sibyl memory';
+  const confidence = numberField(detail, 'confidence');
+  const related = node ? edges.filter((edge) => edge.from === node.id || edge.to === node.id).length : 0;
+  return <section className="trust-card"><div className="section-label"><span>TRUST::SIGNALS</span><b>{connection === 'live' ? 'LIVE' : 'LOCAL'}</b></div><dl><div><dt>SELECTED//</dt><dd>{node?.label || 'NONE'}</dd></div><div><dt>SOURCE//</dt><dd>{source}</dd></div><div><dt>CONFIDENCE//</dt><dd>{confidence === null ? node?.meta || 'UNRATED' : `${Math.round(confidence * 100)}%`}</dd></div><div><dt>RELATIONSHIPS//</dt><dd>{related} LINK{related === 1 ? '' : 'S'}</dd></div></dl></section>;
 }
 
 function CentralTimeline({ events }: { events: MemoryEvent[] }) {
@@ -247,6 +277,10 @@ function CentralTimeline({ events }: { events: MemoryEvent[] }) {
 function NodeInspector({ node, onClose }: { node: GraphNode; onClose: () => void }) {
   return <aside className="node-inspector"><button type="button" onClick={onClose} aria-label="Close node details">[X]</button><span>┌─ NODE::INSPECT / {node.meta}</span><h2>&gt; {node.label}</h2><pre>{JSON.stringify(node.detail, null, 2)}</pre><small>└─ EOF</small></aside>;
 }
+
+function recordOf(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+function textField(record: Record<string, unknown>, key: string) { const value = record[key]; return typeof value === 'string' ? value : ''; }
+function numberField(record: Record<string, unknown>, key: string) { const value = record[key]; return typeof value === 'number' && Number.isFinite(value) ? value : null; }
 
 function eventTone(type: string) { if (type.includes('hypothesis')) return 'hypothesis'; if (type.includes('attempt')) return 'exhausted'; if (type.includes('engagement') || type.includes('recall')) return 'memory'; return 'confirmed'; }
 function pad(value: number) { return String(value).padStart(2, '0'); }
