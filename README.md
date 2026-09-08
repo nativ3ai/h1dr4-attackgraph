@@ -18,15 +18,15 @@ mix speculative hypotheses with confirmed findings. ATTACKGRAPH makes memory a
 load-bearing part of the loop:
 
 ```text
-MCP agent
-   │  observations, attempts, action plans
-   ▼
-H1DR4 ATTACKGRAPH ─── Sibyl Memory
-   │                  hot: target graph + current state
-   │                  cold: append-only evidence and attempts
-   │
-   ├── H1DR4 MCP discovery (capabilities)
-   └── H3RETIK (human-approved disposable Kali execution)
+MCP agent ── typed semantic events ──▶ ATTACKGRAPH validator
+                                            │
+H3RETIK ── optional executor proof ─────────┤
+                                            ▼
+                                      Sibyl Memory
+                                  hot graph + cold event log
+                                            │
+                                            ▼
+                                  operator dashboard + MCP brief
 ```
 
 The output is not a wall of notes. `attackgraph_get_brief` returns a compact,
@@ -36,8 +36,9 @@ continue where the previous one stopped.
 
 The local ATTACKGRAPH dashboard gives the human operator the same shared brain:
 an interactive attack topology, confidence-separated intelligence, exhausted
-paths, evidence chronology, H3RETIK action review, regressions, and JSON export.
-It is read-only and binds locally by default.
+paths, evidence chronology, per-worker attribution, H3RETIK session tracking,
+regressions, and JSON export. It also manages passkeys, team invites, and
+revocable MCP agent identities. It binds locally by default.
 
 ## Safety modes
 
@@ -84,10 +85,47 @@ Example MCP configuration:
 Start with these MCP calls:
 
 1. `attackgraph_open_engagement`
-2. `attackgraph_record_observation` and `attackgraph_record_attempt`
+2. `attackgraph_get_reporting_contract` once per fresh agent session
 3. `attackgraph_get_brief` whenever the agent needs a compact state refresh
 4. `attackgraph_request_action` before any active test
-5. `attackgraph_create_regression` after a finding is confirmed
+5. `attackgraph_report_event` after meaningful executions, attempts, findings,
+   loot, and checkpoints
+6. `attackgraph_create_regression` after a finding is verified
+
+The agent supplies meaning; it does not self-certify proof. Agent reports are
+`asserted`, H3RETIK results without action correlation are `attested`, and only
+complete executor evidence tied to a scoped action is `verified`. See
+[docs/TELEMETRY_V1.md](docs/TELEMETRY_V1.md) for the full contract and examples.
+
+### Evidence-derived engagement posture
+
+The dashboard headline is the current verified posture, never a suggested next
+action or a team-authored status. Sibyl derives reconnaissance, mapped-surface,
+confirmed-finding, and access-material states from high-confidence typed
+telemetry. Hypotheses, job titles, and free-form text cannot change it.
+
+Higher-impact states require a successful, proof-bearing `finding.confirmed`
+event submitted through `attackgraph_ingest_h3retik_event`. For example, its
+attributes can declare the state supported by that proof:
+
+```json
+{
+  "event_type": "finding.confirmed",
+  "status": "completed",
+  "exit_code": 0,
+  "action_id": "act-example",
+  "attributes": {"posture_signal": "foothold_active"},
+  "idempotency_key": "finding:fixture-shell"
+}
+```
+
+The server attaches the H3RETIK proof reference and evidence digest; the agent
+cannot set `verified` itself. The executor intake also requires a separate
+adapter credential that is never included in agent MCP configurations. The
+engine accepts `initial_access_established`, `foothold_active`,
+`privileged_access`, `target_compromised`, `objective_complete`, and
+`regression_detected`. Every displayed transition links back to its Sibyl
+record, source, worker, and timestamp through **WHY THIS STATE**.
 
 ### Run the dashboard
 
@@ -99,6 +137,39 @@ Open `http://localhost:3000`. The API and interface read the database selected
 by `ATTACKGRAPH_DB_PATH` and the tenant selected by
 `ATTACKGRAPH_OPERATOR_ID`. Both services bind to the local machine; engagement
 data is not deployed to a hosted dashboard.
+
+On first launch, claim the console with a passkey or continue in unclaimed
+local mode. The browser delegates Touch ID, Face ID, Windows Hello, security
+keys, and nearby-device QR to the operating system. ATTACKGRAPH stores the
+public credential and a hashed browser-session token, never a password.
+
+### Connect an agent
+
+1. Open **IDENTITY** in the dashboard.
+2. Create a named agent for the active engagement.
+3. Copy the generated MCP configuration. Its token is shown once.
+4. Add that configuration to any MCP-compatible host and restart the host.
+
+Each agent has an independent, revocable token. Its MCP process can only read
+and write engagements where that agent has membership, and every observation,
+hypothesis, attempt, action, and Sibyl event carries its agent identity. Do not
+share the underlying H3RETIK credential with agents; ATTACKGRAPH remains the
+broker and human approval boundary.
+
+The same panel creates single-use 24-hour human invite links and records which
+H3RETIK session IDs belong to the engagement. The engagement ID is also the
+durable H3RETIK workspace ID, so multiple disposable sessions contribute jobs
+to one combined operation. Session bindings are operational metadata only;
+H3RETIK wallet and access credentials stay in environment variables outside
+the dashboard.
+
+For a locked deployment, set the relying-party values explicitly:
+
+```bash
+ATTACKGRAPH_AUTH_MODE=passkey
+ATTACKGRAPH_RP_ID=localhost
+ATTACKGRAPH_ORIGIN=http://localhost:3000
+```
 
 ## Sibyl is the product, not a log sink
 
@@ -124,11 +195,18 @@ uv run pytest tests/test_memory.py -k deletion
 H3RETIK is the disposable execution plane, not the brain. The operator first
 accepts its terms and provisions a compute session outside ATTACKGRAPH. Then:
 
-1. The agent drafts a command with `attackgraph_request_action`.
-2. ATTACKGRAPH checks mode, exact target, lane, risk, and destructive patterns.
-3. A human supplies the server-side approval code.
-4. The adapter creates and starts a scoped job in the existing H3RETIK session.
-5. Sanitized output returns to Sibyl as evidence and updates the graph.
+1. Attach each paid session with `attackgraph_bind_h3retik_session`.
+2. The agent drafts a command with `attackgraph_request_action` and selects a session.
+3. ATTACKGRAPH checks mode, exact target, lane, risk, and destructive patterns.
+4. A human supplies the server-side approval code.
+5. The adapter creates and starts a scoped job in the selected H3RETIK session.
+6. Sanitized output returns through `attackgraph_ingest_h3retik_event`; the
+   server computes a digest and promotes the matching Sibyl assertion in place.
+
+Sessions can be topped up without replacement.
+`attackgraph_create_h3retik_extension_receipt` returns a Base funding address;
+after the operator pays, `attackgraph_sync_h3retik_receipt` extends the same
+session and its auth deadline.
 
 Credentials and approval codes are environment-only. They are never returned by
 an MCP tool or written to Sibyl. See [docs/H3RETIK_RUNBOOK.md](docs/H3RETIK_RUNBOOK.md).

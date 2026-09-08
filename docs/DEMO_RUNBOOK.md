@@ -7,24 +7,34 @@ engagement when its context ends, repeats failed work, and loses provenance.
 
 ## 0:25 — Open an engagement
 
-Open an `autonomous_lab` engagement for an explicitly owned demo target. Record
-one observation, one failed attempt, and one open hypothesis.
+Open an `autonomous_lab` engagement for an explicitly owned demo target. Have
+the first worker read `attackgraph_get_reporting_contract`, then report one
+finding assertion, one failed attempt, and one open hypothesis.
+
+Open **IDENTITY**, create two named MCP workers, and show that each gets a
+separate revocable token scoped to this engagement. Do not reveal the token on
+the recorded screen.
 
 ## 0:55 — The attack brief
 
-Call `attackgraph_get_brief`. Point out the separation between confirmed facts,
-open hypotheses, exhausted paths, pending actions, and exact scope.
+Call `attackgraph_get_brief` from one worker. Point out the separation between
+confirmed facts, asserted telemetry, open hypotheses, exhausted paths, pending
+actions, and exact scope.
 
 ## 1:20 — Disposable Kali
 
 Request an `nmap` or `curl` action. Show the policy decision and human approval.
-Execute it in the fixed H3RETIK Kali worker. Ingest the result as evidence.
+Execute it in the fixed H3RETIK Kali worker. Ingest its result using the same
+idempotency key as the assertion: one dashboard event moves from `ASSERTED` to
+`VERIFIED`, with a server-generated proof digest.
 
 ## 2:00 — Fresh-session recall
 
 Stop the MCP process. Start a new one with the same Sibyl database and operator.
 Call `attackgraph_get_brief` without replaying the conversation. Show that the
-new agent continues from the evidence and does not repeat the failed approach.
+new agent continues from shared evidence, does not repeat the failed approach,
+and that the dashboard still attributes each event to the worker and H3RETIK
+session that produced it.
 
 ## 2:30 — Make a finding durable
 

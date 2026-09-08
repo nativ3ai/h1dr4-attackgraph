@@ -1,0 +1,19 @@
+{
+  "name": "@h1dr4/proofvault-contracts",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "node scripts/compile.mjs",
+    "test": "node test/evm.mjs",
+    "attest:build": "node scripts/attest-reproducible-build.mjs",
+    "deploy:base": "node scripts/deploy-base.mjs"
+  },
+  "dependencies": {
+    "ethers": "6.17.0"
+  },
+  "devDependencies": {
+    "ganache": "7.9.2",
+    "solc": "0.8.33"
+  }
+}

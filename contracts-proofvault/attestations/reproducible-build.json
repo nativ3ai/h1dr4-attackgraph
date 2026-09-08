@@ -1,0 +1,29 @@
+{
+  "schema": "h1dr4.proofvault-reproducible-build/v1",
+  "clean_builds": 2,
+  "install_command": "npm ci --ignore-scripts",
+  "compile_command": "npm run compile",
+  "node_version": "v22.22.0",
+  "compiler": "0.8.33+commit.64118f21.Emscripten.clang",
+  "compiler_settings": {
+    "evmVersion": "paris",
+    "viaIR": true,
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    }
+  },
+  "release_inputs_sha256": {
+    "H1DR4ProofVault.sol": "a18f95c1f3023e455ad3a0a6b282ffa6d7dd6f539a0b56e0528e2d64935473e2",
+    "package.json": "70f0788fa37ab6b5cafa810db7f0ad52c245a3d6799701161baa8a5556813f16",
+    "package-lock.json": "068b53195415ba7a133e260bc1fcae33b0738d90447722d9b352aacb4bf1cc81",
+    "scripts/compile.mjs": "c783ceab7b2afba393ab0af7eb97bd3f12d0ab3691272b225076dfefd0d57de9",
+    "scripts/attest-reproducible-build.mjs": "c1cca0d7c590eef8b70010752828ab8cafb5b817ad1faa2c0da44b6b9ec7e2af",
+    "scripts/deploy-base.mjs": "9b8e770e69849f906452c43456a5ee6c9413014cb6459062793b665e2f39a168",
+    "test/evm.mjs": "6d86117babb6c9ca05f529c49710d409c6d05e4e54df707cb3ac084c14072924"
+  },
+  "source_sha256": "a18f95c1f3023e455ad3a0a6b282ffa6d7dd6f539a0b56e0528e2d64935473e2",
+  "artifact_sha256": "583e4477b08539e85da5e3c97c4affb26b7fe2cffedc6a8e3ce06829f1f2fca7",
+  "creation_bytecode_sha256": "eb0c2f14d95a42e49323c516e76c8d9d0f403e4d2006735fdaff3371391850fa",
+  "runtime_template_sha256": "4296adaaa38b40b23787b6d78b9fb0bb8a4416ddf97d77b49f77c3fd66dd16de"
+}

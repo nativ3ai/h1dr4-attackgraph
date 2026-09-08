@@ -16,6 +16,7 @@ dependencies = [
   "sibyl-memory-client==0.7.0",
   "starlette>=0.47,<2",
   "uvicorn>=0.35,<1",
+  "webauthn>=3,<4",
 ]
 
 [project.optional-dependencies]

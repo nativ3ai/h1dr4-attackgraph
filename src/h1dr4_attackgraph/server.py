@@ -6,23 +6,35 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from .service import AttackGraphService
+from .identity import IdentityStore
+from .service import AttackGraphService, ConfigurationError
 
 mcp = FastMCP(
     "H1DR4 ATTACKGRAPH",
     instructions=(
-        "Persistent, model-agnostic red-team context. Open an engagement, record evidence and "
-        "attempts, read the brief before reasoning, and request policy evaluation before active "
-        "testing. Use only on explicitly authorized targets."
+        "Persistent, model-agnostic red-team context. Read the reporting contract once, open or "
+        "select an engagement, request policy evaluation before active testing, and report each "
+        "meaningful execution, attempt, finding, loot item, and checkpoint as typed telemetry. "
+        "Agent reports are assertions; only correlated executor attestations become verified. "
+        "Use only on explicitly authorized targets."
     ),
 )
 
 
 @lru_cache(maxsize=1)
 def get_service() -> AttackGraphService:
+    identity = IdentityStore(os.getenv("ATTACKGRAPH_CONTROL_DB_PATH", ".attackgraph/control.db"))
+    token = os.getenv("ATTACKGRAPH_AGENT_TOKEN", "")
+    agent = identity.authenticate_agent(token) if token else None
+    if token and not agent:
+        raise ConfigurationError("ATTACKGRAPH_AGENT_TOKEN is invalid or revoked")
     return AttackGraphService(
         db_path=os.getenv("ATTACKGRAPH_DB_PATH", ".attackgraph/sibyl.db"),
         operator_id=os.getenv("ATTACKGRAPH_OPERATOR_ID", "local-operator"),
+        identity=identity,
+        principal_type="agent" if agent else "human",
+        principal_id=str(agent["agent_id"]) if agent else "",
+        actor_name=str(agent["name"]) if agent else "local-operator",
     )
 
 
@@ -67,6 +79,106 @@ def attackgraph_get_brief(engagement_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def attackgraph_get_reporting_contract() -> dict[str, Any]:
+    """Return the h1dr4.telemetry.v1 reporting grid, enums, and assurance rules."""
+    return get_service().reporting_contract()
+
+
+@mcp.tool()
+def attackgraph_report_event(
+    engagement_id: str,
+    event_type: str,
+    summary: str,
+    target: str = "",
+    outcome: str = "unknown",
+    technique: str = "",
+    confidence: float = 0.5,
+    h3retik_session_id: str = "",
+    action_id: str = "",
+    entities: list[dict[str, Any]] | None = None,
+    relationships: list[dict[str, Any]] | None = None,
+    artifact: dict[str, Any] | None = None,
+    attributes: dict[str, Any] | None = None,
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    """Report one semantic telemetry event.
+
+    This is an agent assertion and cannot self-declare verified. Reuse the same
+    idempotency_key when a later executor attestation should promote it.
+    """
+    return get_service().report_telemetry(
+        engagement_id,
+        event_type=event_type,
+        summary=summary,
+        target=target,
+        outcome=outcome,
+        technique=technique,
+        confidence=confidence,
+        h3retik_session_id=h3retik_session_id,
+        action_id=action_id,
+        entities=entities,
+        relationships=relationships,
+        artifact=artifact,
+        attributes=attributes,
+        idempotency_key=idempotency_key,
+    )
+
+
+@mcp.tool()
+def attackgraph_ingest_h3retik_event(
+    engagement_id: str,
+    event_type: str,
+    summary: str,
+    h3retik_session_id: str,
+    job_id: str,
+    command_id: str,
+    status: str,
+    attestation_token: str,
+    exit_code: int | None = None,
+    target: str = "",
+    outcome: str = "unknown",
+    technique: str = "",
+    confidence: float = 1.0,
+    action_id: str = "",
+    entities: list[dict[str, Any]] | None = None,
+    relationships: list[dict[str, Any]] | None = None,
+    artifact: dict[str, Any] | None = None,
+    attributes: dict[str, Any] | None = None,
+    evidence: dict[str, Any] | None = None,
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    """Ingest authenticated H3RETIK telemetry with a server-generated evidence digest.
+
+    Complete proof becomes verified only when it correlates to an existing scoped
+    AttackGraph action. Otherwise it remains tool-attested and cannot promote a
+    high-impact posture. This adapter-only tool requires the server-configured
+    H3RETIK attestation token; do not expose that credential to agent workers.
+    """
+    return get_service().ingest_h3retik_telemetry(
+        engagement_id,
+        event_type=event_type,
+        summary=summary,
+        h3retik_session_id=h3retik_session_id,
+        job_id=job_id,
+        command_id=command_id,
+        status=status,
+        exit_code=exit_code,
+        target=target,
+        outcome=outcome,
+        technique=technique,
+        confidence=confidence,
+        action_id=action_id,
+        entities=entities,
+        relationships=relationships,
+        artifact=artifact,
+        attributes=attributes,
+        evidence=evidence,
+        idempotency_key=idempotency_key,
+        attestation_token=attestation_token,
+    )
+
+
+@mcp.tool()
 def attackgraph_record_observation(
     engagement_id: str,
     statement: str,
@@ -75,7 +187,12 @@ def attackgraph_record_observation(
     kind: str = "observation",
     evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Record a sourced fact, candidate fact, finding, or execution artifact in Sibyl."""
+    """Record a legacy sourced assertion in Sibyl.
+
+    Use attackgraph_report_event for new integrations. Posture claims supplied
+    here remain unverified; only correlated executor telemetry can promote a
+    high-impact dashboard state.
+    """
     return get_service().record_observation(
         engagement_id,
         statement=statement,
@@ -122,6 +239,7 @@ def attackgraph_request_action(
     risk: str = "active",
     max_minutes: int = 5,
     budget_usdc: float = 0.50,
+    h3retik_session_id: str = "",
 ) -> dict[str, Any]:
     """Policy-check and record an action plan. This does not execute the command."""
     return get_service().request_action(
@@ -133,6 +251,7 @@ def attackgraph_request_action(
         risk=risk,
         max_minutes=max_minutes,
         budget_usdc=budget_usdc,
+        h3retik_session_id=h3retik_session_id,
     )
 
 
@@ -146,6 +265,58 @@ def attackgraph_h3retik_capabilities() -> dict[str, Any]:
 def attackgraph_h3retik_quote(minutes: int = 5, actions: int = 1, location: str = "auto") -> Any:
     """Get a live H3RETIK compute-window quote. This does not accept terms or pay."""
     return get_service().h3retik_quote(minutes=minutes, actions=actions, location=location)
+
+
+@mcp.tool()
+def attackgraph_list_h3retik_sessions(engagement_id: str) -> list[dict[str, Any]]:
+    """List the H3RETIK session pool bound to this shared engagement."""
+    return get_service().h3retik_sessions(engagement_id)
+
+
+@mcp.tool()
+def attackgraph_bind_h3retik_session(
+    engagement_id: str,
+    session_id: str,
+    label: str = "H3RETIK session",
+    lane: str = "",
+) -> dict[str, Any]:
+    """Attach a paid H3RETIK session to this workspace locally and in H3RETIK Cloud."""
+    return get_service().bind_h3retik_session(
+        engagement_id,
+        session_id=session_id,
+        label=label,
+        lane=lane,
+    )
+
+
+@mcp.tool()
+def attackgraph_get_h3retik_workspace(engagement_id: str) -> Any:
+    """Read live H3RETIK sessions and jobs attached to this AttackGraph workspace."""
+    return get_service().h3retik_workspace(engagement_id)
+
+
+@mcp.tool()
+def attackgraph_create_h3retik_extension_receipt(
+    engagement_id: str,
+    session_id: str,
+    minutes: int,
+    actions: int,
+    asset: str = "USDC",
+) -> Any:
+    """Create a payable receipt that adds time/actions to an attached session."""
+    return get_service().create_h3retik_extension_receipt(
+        engagement_id,
+        session_id=session_id,
+        minutes=minutes,
+        actions=actions,
+        asset=asset,
+    )
+
+
+@mcp.tool()
+def attackgraph_sync_h3retik_receipt(engagement_id: str, receipt_id: str) -> Any:
+    """Sync a previously created H3RETIK payment receipt and return its session state."""
+    return get_service().sync_h3retik_receipt(engagement_id, receipt_id)
 
 
 @mcp.tool()

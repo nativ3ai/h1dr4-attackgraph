@@ -18,6 +18,10 @@ class H3retikClient:
             "h3retik_start_job",
             "h3retik_get_job",
             "h3retik_get_job_output",
+            "h3retik_create_extension_receipt",
+            "h3retik_create_workspace",
+            "h3retik_attach_session_to_workspace",
+            "h3retik_get_workspace",
         }
         return {
             "endpoint": self.rpc.endpoint,
@@ -31,6 +35,82 @@ class H3retikClient:
             {"minutes": minutes, "actions": actions, "location": location},
         )
 
+    def ensure_workspace(
+        self,
+        *,
+        wallet: str,
+        token: str,
+        workspace_id: str,
+        name: str = "",
+    ) -> Any:
+        return self.rpc.call_tool(
+            "h3retik_create_workspace",
+            {
+                "wallet": wallet,
+                "token": token,
+                "workspace_id": workspace_id,
+                "name": name,
+            },
+        )
+
+    def attach_session(
+        self,
+        *,
+        wallet: str,
+        token: str,
+        workspace_id: str,
+        session_id: str,
+        workspace_name: str = "",
+        label: str = "",
+        lane: str = "",
+    ) -> Any:
+        return self.rpc.call_tool(
+            "h3retik_attach_session_to_workspace",
+            {
+                "wallet": wallet,
+                "token": token,
+                "workspace_id": workspace_id,
+                "workspace_name": workspace_name,
+                "session_id": session_id,
+                "label": label,
+                "lane": lane,
+            },
+        )
+
+    def workspace(self, *, wallet: str, token: str, workspace_id: str) -> Any:
+        return self.rpc.call_tool(
+            "h3retik_get_workspace",
+            {"wallet": wallet, "token": token, "workspace_id": workspace_id},
+        )
+
+    def create_extension_receipt(
+        self,
+        *,
+        wallet: str,
+        token: str,
+        session_id: str,
+        minutes: int,
+        actions: int,
+        asset: str = "USDC",
+    ) -> Any:
+        return self.rpc.call_tool(
+            "h3retik_create_extension_receipt",
+            {
+                "wallet": wallet,
+                "token": token,
+                "session_id": session_id,
+                "minutes": minutes,
+                "actions": actions,
+                "asset": asset,
+            },
+        )
+
+    def sync_receipt(self, receipt_id: str) -> Any:
+        return self.rpc.call_tool(
+            "h3retik_sync_compute_receipt",
+            {"receipt_id": receipt_id},
+        )
+
     def execute_existing_session(
         self,
         *,
@@ -38,8 +118,24 @@ class H3retikClient:
         token: str,
         session_id: str,
         spec: dict[str, Any],
-        poll_timeout: float = 120.0,
+        workspace_id: str = "",
+        workspace_name: str = "",
+        session_label: str = "",
+        session_lane: str = "",
+        poll_timeout: float | None = None,
     ) -> dict[str, Any]:
+        if workspace_id:
+            self.attach_session(
+                wallet=wallet,
+                token=token,
+                workspace_id=workspace_id,
+                workspace_name=workspace_name,
+                session_id=session_id,
+                label=session_label,
+                lane=session_lane,
+            )
+        if poll_timeout is None:
+            poll_timeout = self.default_poll_timeout(spec)
         created = self.rpc.call_tool(
             "h3retik_create_session_job",
             {"wallet": wallet, "token": token, "session_id": session_id, "spec": spec},
@@ -69,6 +165,13 @@ class H3retikClient:
             {"wallet": wallet, "token": token, "job_id": job_id},
         )
         return {"job_id": job_id, "status": last_status, "output": output}
+
+    @staticmethod
+    def default_poll_timeout(spec: dict[str, Any]) -> float:
+        """Include job runtime plus cold provisioning and leased-tool setup."""
+
+        requested_minutes = max(0.0, float(spec.get("max_minutes") or 0))
+        return max(300.0, requested_minutes * 60.0 + 300.0)
 
     @classmethod
     def _find_value(cls, value: Any, key: str) -> Any:
