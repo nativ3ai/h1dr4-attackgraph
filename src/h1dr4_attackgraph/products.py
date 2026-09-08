@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -102,6 +103,15 @@ class OperationSchedule:
     def validate(self) -> None:
         if not self.starts_at or not self.ends_at:
             raise ValueError("operation_schedule_window_required")
+        try:
+            starts_at = datetime.fromisoformat(self.starts_at.replace("Z", "+00:00"))
+            ends_at = datetime.fromisoformat(self.ends_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("operation_schedule_timestamp_invalid") from exc
+        if starts_at.tzinfo is None or ends_at.tzinfo is None:
+            raise ValueError("operation_schedule_timezone_required")
+        if starts_at.astimezone(UTC) >= ends_at.astimezone(UTC):
+            raise ValueError("operation_schedule_window_invalid")
         if self.cadence_minutes < 0:
             raise ValueError("operation_schedule_cadence_invalid")
         if not 1 <= self.window_minutes <= 24 * 60:
@@ -163,7 +173,12 @@ class OperationRedScope:
 
     def dispatch_plan(self) -> list[dict[str, Any]]:
         self.validate()
-        allocation, remainder = divmod(self.budget_usdc_micros, len(self.modules))
+        ordered_modules = [
+            *sorted(item for item in self.modules if item not in {"verification", "reporting"}),
+            *[item for item in ("verification", "reporting") if item in self.modules],
+        ]
+        ordered_targets = sorted(self.targets)
+        allocation, remainder = divmod(self.budget_usdc_micros, len(ordered_modules))
         return [
             {
                 "agent_id": f"{self.workspace_id}:{module_id}",
@@ -174,9 +189,9 @@ class OperationRedScope:
                 "tool_pack": MODULE_REGISTRY[module_id].tool_pack,
                 "model_role": MODULE_REGISTRY[module_id].model_role,
                 "capabilities": list(MODULE_REGISTRY[module_id].capabilities),
-                "targets": list(self.targets),
+                "targets": ordered_targets,
                 "budget_usdc_micros": allocation + (1 if index < remainder else 0),
                 "schedule": asdict(self.schedule),
             }
-            for index, module_id in enumerate(self.modules)
+            for index, module_id in enumerate(ordered_modules)
         ]

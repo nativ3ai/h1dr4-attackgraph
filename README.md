@@ -211,6 +211,27 @@ session and its auth deadline.
 Credentials and approval codes are environment-only. They are never returned by
 an MCP tool or written to Sibyl. See [docs/H3RETIK_RUNBOOK.md](docs/H3RETIK_RUNBOOK.md).
 
+## Operation Red
+
+Operation Red is the managed campaign path. A company defines an exact target
+allowlist, module set, time window, request-rate ceiling, prohibited actions,
+and maximum USDC budget. That canonical scope is hashed before approval.
+
+Each module receives a separate H3RETIK worker receipt and worker identity. The
+control plane accepts funding only after H3RETIK verifies the Base receipt and
+returns the paid session and worker IDs. Bearer tokens are used only in memory
+while dispatching and are never written to the campaign database or Sibyl.
+
+The run order is operational modules, independent verification, then reporting.
+H3RETIK execution attestations tied to the approved action become verified
+telemetry; model-authored findings remain assertions until reproducible proof
+promotes them. A campaign is marked reported only after its delivery provider
+returns a message reference. AgentMail delivery uses the official inbox send
+endpoint through `AgentMailReportSender`.
+
+See [docs/OPERATION_RED.md](docs/OPERATION_RED.md) for the state machine,
+integration API, credential boundary, and deterministic end-to-end test.
+
 ## H1DR4 integration
 
 `attackgraph_discover_h1dr4_tools` reads the live H1DR4 MCP capability list and
