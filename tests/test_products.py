@@ -38,6 +38,12 @@ def test_operation_scope_is_canonical_and_dispatches_specialists():
         "verification",
         "reporting",
     }
+    assert [item["module_id"] for item in plan] == [
+        "osint",
+        "web",
+        "verification",
+        "reporting",
+    ]
     assert sum(item["budget_usdc_micros"] for item in plan) == 20_000_000
     assert all(item["workspace_id"] == "redop-demo" for item in plan)
     assert next(item for item in plan if item["module_id"] == "web")["tool_pack"] == (

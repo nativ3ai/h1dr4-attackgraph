@@ -1,14 +1,14 @@
 # Validation record
 
-Validated on 2026-09-03 from a non-FileProvider macOS workspace.
+Latest local validation: 2026-09-08 from a non-FileProvider macOS workspace.
 
 ## Automated
 
 ```text
 ruff: all checks passed
-pytest: 33 passed
+pytest: 58 passed
 package: sdist and wheel build successfully
-dashboard: lint and production build succeed
+dashboard: lint and production build succeeded in the latest main CI
 ```
 
 The suite covers:
@@ -32,6 +32,32 @@ The suite covers:
 - Exact target, action, and bound-session correlation for verified evidence.
 - Nested secret redaction across agent attributes and executor proof.
 - Typed event, worker, session, job, room, and relationship projection into the dashboard.
+- Operation Red scope and derived-plan integrity checks.
+- Rejection of caller-asserted funding and exact H3RETIK paid-receipt validation.
+- Per-module worker/session/job reconciliation without bearer-token persistence.
+- Schedule-window enforcement before worker dispatch.
+- Automatic verified executor telemetry plus asserted semantic findings and loot.
+- Report delivery gating and the AgentMail send adapter.
+
+## Operation Red deterministic end-to-end
+
+The local suite executes a complete three-worker campaign with a deterministic
+H3RETIK transport: `web`, `verification`, and `reporting`. It quotes and creates
+the same worker receipt shape as the hosted MCP, syncs independently paid
+Base/USDC receipts, binds separate H3RETIK session and worker IDs, runs each
+worker, parses its completion envelope, and writes correlated execution,
+finding, and artifact events into the real local Sibyl database.
+
+The test proves the orchestration and trust boundaries without spending funds
+or touching a target. It deliberately keeps model-authored findings asserted
+while executor completion records become verified. The final state changes to
+`reported` only after the report adapter returns a message reference. The test
+also scans the campaign database bytes and confirms that the fake H3RETIK bearer
+tokens were never persisted.
+
+This does not claim a newly paid live three-worker campaign. The live hosted
+runtime proof below and this orchestration proof are separate until a company
+funds the full specialist campaign.
 
 ## MCP transport
 
@@ -56,8 +82,10 @@ h1dr4_osint_prepare
 h1dr4_osint_agent
 ```
 
-The live H3RETIK endpoint advertised 33 tools, including compute-window quote,
-session-job create/start, job status, and job output. The initial read-only
+The live H3RETIK endpoint advertised 38 tools. On 2026-09-08 a fresh read-only
+worker quote confirmed all four worker tools, a `7.0 USDC` micro-worker quote,
+manual `openai/gpt-5.6-sol`, `terminal,file`, and `blockrun-x402`. The initial
+read-only
 preflight quoted a 5-minute, 3-action Europe window at `0.19 USDC` without
 accepting terms or spending funds. The separately authorized paid lifecycle is
 recorded below.

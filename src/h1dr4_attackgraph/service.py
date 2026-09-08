@@ -342,6 +342,64 @@ class AttackGraphService:
         )
         return action
 
+    def authorize_operation_action(
+        self,
+        engagement_id: str,
+        *,
+        campaign_id: str,
+        scope_hash: str,
+        module_id: str,
+        target: str,
+        lane: str,
+        h3retik_session_id: str,
+        approved_by: str,
+    ) -> dict[str, Any]:
+        """Convert one immutable campaign approval into a scoped executor action."""
+
+        self._require_access(engagement_id)
+        engagement = self.memory.get_engagement(engagement_id)
+        if engagement.mode is not EngagementMode.AUTONOMOUS_LAB:
+            raise PermissionError("operation_red_requires_autonomous_lab")
+        self._require_target(engagement, target)
+        if lane not in engagement.allowed_lanes:
+            raise PermissionError("operation_lane_outside_engagement_scope")
+        if not all(
+            value.strip()
+            for value in (campaign_id, scope_hash, module_id, h3retik_session_id, approved_by)
+        ):
+            raise ValueError("operation_authorization_incomplete")
+        if self.identity:
+            self.identity.bind_h3retik_session(
+                engagement_id=engagement_id,
+                session_id=h3retik_session_id,
+                label=f"Operation Red {module_id}",
+                lane=lane,
+                attached_by=approved_by,
+            )
+        return self.memory.record_action(
+            engagement_id,
+            {
+                "target": target,
+                "lane": lane,
+                "command": f"operation-red:{campaign_id}:{module_id}",
+                "purpose": f"Operation Red {module_id} worker",
+                "risk": ActionRisk.ACTIVE.value,
+                "max_minutes": 60,
+                "budget_usdc": 0,
+                "h3retik_session_id": h3retik_session_id,
+                "status": "approved",
+                "policy": {
+                    "decision": "campaign_approved",
+                    "may_dispatch": True,
+                    "approved_by": approved_by,
+                    "campaign_id": campaign_id,
+                    "scope_hash": scope_hash,
+                    "module_id": module_id,
+                    "reason": "immutable Operation Red scope approved before funding",
+                },
+            },
+        )
+
     def h3retik_capabilities(self) -> dict[str, Any]:
         return self.h3retik.capabilities()
 

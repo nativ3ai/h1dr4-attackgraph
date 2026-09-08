@@ -22,6 +22,10 @@ class H3retikClient:
             "h3retik_create_workspace",
             "h3retik_attach_session_to_workspace",
             "h3retik_get_workspace",
+            "h3retik_quote_worker",
+            "h3retik_create_worker_receipt",
+            "h3retik_get_worker",
+            "h3retik_create_worker_job",
         }
         return {
             "endpoint": self.rpc.endpoint,
@@ -111,6 +115,141 @@ class H3retikClient:
             {"receipt_id": receipt_id},
         )
 
+    def quote_worker(
+        self,
+        *,
+        goal: str,
+        target: str,
+        package: str = "micro",
+        location: str = "auto",
+        inference_budget_usdc: float = 1.0,
+        model_mode: str = "manual",
+        model: str = "",
+        routing_profile: str = "premium",
+        hermes_toolsets: list[str] | None = None,
+    ) -> Any:
+        arguments: dict[str, Any] = {
+            "plugin_id": "h1dr4-worker-pack",
+            "preset": "redteam",
+            "package": package,
+            "goal": goal,
+            "target": target,
+            "location": location,
+            "inference_budget_usdc": inference_budget_usdc,
+            "model_mode": model_mode,
+            "routing_profile": routing_profile,
+            "hermes_toolsets": hermes_toolsets or ["terminal", "file"],
+        }
+        if model:
+            arguments["model"] = model
+        return self.rpc.call_tool("h3retik_quote_worker", arguments)
+
+    def create_worker_receipt(
+        self,
+        *,
+        wallet: str,
+        goal: str,
+        target: str,
+        package: str = "micro",
+        location: str = "auto",
+        asset: str = "USDC",
+        inference_budget_usdc: float = 1.0,
+        model_mode: str = "manual",
+        model: str = "",
+        routing_profile: str = "premium",
+        hermes_toolsets: list[str] | None = None,
+        lane: str = "",
+        constraints: list[str] | None = None,
+    ) -> Any:
+        arguments: dict[str, Any] = {
+            "wallet": wallet,
+            "plugin_id": "h1dr4-worker-pack",
+            "preset": "redteam",
+            "package": package,
+            "goal": goal,
+            "target": target,
+            "location": location,
+            "asset": asset,
+            "inference_budget_usdc": inference_budget_usdc,
+            "model_mode": model_mode,
+            "routing_profile": routing_profile,
+            "hermes_toolsets": hermes_toolsets or ["terminal", "file"],
+            "constraints": list(constraints or []),
+        }
+        if model:
+            arguments["model"] = model
+        if lane:
+            arguments["lane"] = lane
+        return self.rpc.call_tool("h3retik_create_worker_receipt", arguments)
+
+    def get_worker(self, *, wallet: str, token: str, worker_id: str) -> Any:
+        return self.rpc.call_tool(
+            "h3retik_get_worker",
+            {"wallet": wallet, "token": token, "worker_id": worker_id},
+        )
+
+    def execute_worker(
+        self,
+        *,
+        wallet: str,
+        token: str,
+        worker_id: str,
+        target: str,
+        workspace_id: str,
+        workspace_name: str = "",
+        session_label: str = "Operation Red worker",
+        session_lane: str = "",
+        max_minutes: int = 30,
+        job_id: str = "",
+        command: str = "",
+        poll_timeout: float | None = None,
+    ) -> dict[str, Any]:
+        worker = self.get_worker(wallet=wallet, token=token, worker_id=worker_id)
+        session_id = str(self._find_value(worker, "session_id") or "")
+        if not session_id:
+            raise RuntimeError(f"H3RETIK worker did not return a session_id: {worker!r}")
+        if workspace_id:
+            self.attach_session(
+                wallet=wallet,
+                token=token,
+                workspace_id=workspace_id,
+                workspace_name=workspace_name,
+                session_id=session_id,
+                label=session_label,
+                lane=session_lane,
+            )
+        create_args: dict[str, Any] = {
+            "wallet": wallet,
+            "token": token,
+            "worker_id": worker_id,
+            "target": target,
+            "max_minutes": max_minutes,
+        }
+        if job_id:
+            create_args["job_id"] = job_id
+        if command:
+            create_args["cmd"] = command
+        created = self.rpc.call_tool("h3retik_create_worker_job", create_args)
+        created_job_id = str(self._find_value(created, "job_id") or "")
+        if not created_job_id:
+            raise RuntimeError(f"H3RETIK did not return a worker job_id: {created!r}")
+        if poll_timeout is None:
+            poll_timeout = self.default_poll_timeout({"max_minutes": max_minutes})
+        status, output = self._start_and_poll(
+            wallet=wallet,
+            token=token,
+            session_id=session_id,
+            job_id=created_job_id,
+            poll_timeout=poll_timeout,
+        )
+        return {
+            "worker_id": worker_id,
+            "session_id": session_id,
+            "job_id": created_job_id,
+            "status": status,
+            "output": output,
+        }
+
     def execute_existing_session(
         self,
         *,
@@ -143,6 +282,24 @@ class H3retikClient:
         job_id = self._find_value(created, "job_id")
         if not job_id:
             raise RuntimeError(f"H3RETIK did not return a job_id: {created!r}")
+        last_status, output = self._start_and_poll(
+            wallet=wallet,
+            token=token,
+            session_id=session_id,
+            job_id=str(job_id),
+            poll_timeout=poll_timeout,
+        )
+        return {"job_id": job_id, "status": last_status, "output": output}
+
+    def _start_and_poll(
+        self,
+        *,
+        wallet: str,
+        token: str,
+        session_id: str,
+        job_id: str,
+        poll_timeout: float,
+    ) -> tuple[Any, Any]:
         started = self.rpc.call_tool(
             "h3retik_start_job",
             {"wallet": wallet, "token": token, "session_id": session_id, "job_id": job_id},
@@ -164,7 +321,7 @@ class H3retikClient:
             "h3retik_get_job_output",
             {"wallet": wallet, "token": token, "job_id": job_id},
         )
-        return {"job_id": job_id, "status": last_status, "output": output}
+        return last_status, output
 
     @staticmethod
     def default_poll_timeout(spec: dict[str, Any]) -> float:

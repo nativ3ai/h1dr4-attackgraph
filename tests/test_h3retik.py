@@ -11,6 +11,10 @@ class FakeRpc:
         self.calls.append((name, arguments))
         if name == "h3retik_create_session_job":
             return {"job_id": "job-1"}
+        if name == "h3retik_get_worker":
+            return {"worker": {"worker_id": "worker-1", "session_id": "session-worker"}}
+        if name == "h3retik_create_worker_job":
+            return {"job_id": "job-worker"}
         if name == "h3retik_attach_session_to_workspace":
             return {
                 "workspace_id": arguments["workspace_id"],
@@ -67,3 +71,34 @@ def test_execution_attaches_session_to_durable_workspace_first():
     assert arguments["workspace_id"] == "eng-1"
     assert arguments["session_id"] == "session-1"
     assert arguments["lane"] == "web"
+
+
+def test_worker_execution_uses_paid_worker_session_and_durable_workspace():
+    client = H3retikClient.__new__(H3retikClient)
+    client.rpc = FakeRpc()
+
+    result = client.execute_worker(
+        wallet="0xabc",
+        token="ephemeral-token",
+        worker_id="worker-1",
+        target="owned.example.test",
+        workspace_id="eng-1",
+        workspace_name="Operation Red",
+        session_lane="web",
+        max_minutes=2,
+        poll_timeout=1,
+    )
+
+    assert result["job_id"] == "job-worker"
+    assert result["session_id"] == "session-worker"
+    assert [name for name, _ in client.rpc.calls] == [
+        "h3retik_get_worker",
+        "h3retik_attach_session_to_workspace",
+        "h3retik_create_worker_job",
+        "h3retik_start_job",
+        "h3retik_get_job",
+        "h3retik_get_job_output",
+    ]
+    create_call = client.rpc.calls[2][1]
+    assert create_call["worker_id"] == "worker-1"
+    assert create_call["max_minutes"] == 2
