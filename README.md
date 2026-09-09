@@ -55,7 +55,8 @@ answers on the user's behalf.
 
 ## Quick start
 
-Requirements: Python 3.11+ and `uv`.
+Requirements: Python 3.11+, `uv`, Node.js 22.13+, and npm. Node is only used
+for the local operator dashboard; the MCP server itself is Python.
 
 ```bash
 git clone https://github.com/nativ3ai/h1dr4-attackgraph
@@ -64,6 +65,26 @@ uv sync --extra dev
 cp .env.example .env
 uv run h1dr4-attackgraph
 ```
+
+Local use requires no API key, wallet, hosted model, or external database.
+Sibyl Memory runs in-process and stores the engagement in the local SQLite file
+selected by `ATTACKGRAPH_DB_PATH`. The default `.env.example` is enough to start
+an unclaimed local dashboard.
+
+### Optional integrations and credentials
+
+| Capability | What it needs |
+|---|---|
+| Local MCP server, Sibyl memory, dashboard, exports | Nothing beyond the installed dependencies |
+| Passkey-locked dashboard | A compatible browser/device and the local RP/origin values; no API key |
+| H1DR4 public discovery tools | Network access to `https://h1dr4.dev/mcp`; no private key |
+| H3RETIK quotes and capability discovery | Network access to the public H3RETIK MCP |
+| H3RETIK command execution | A paid session, its wallet/token/session ID, and separate human approval + executor-attestation secrets |
+| AgentMail report delivery for managed Operation Red | An AgentMail API key and inbox ID supplied only to the report adapter |
+| Base settlement or ProofVault deployment | A user-controlled wallet only when that optional on-chain action is performed |
+
+The agent never needs direct access to the H3RETIK bearer token, the executor
+attestation secret, an AgentMail key, or a wallet private key.
 
 Example MCP configuration:
 
