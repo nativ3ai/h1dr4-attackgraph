@@ -123,6 +123,124 @@ class SibylAttackMemory:
     def list_engagements(self) -> list[dict[str, Any]]:
         return [entity["body"] for entity in self.client.list_entities("engagement", limit=100)]
 
+    def export_workspace(self, engagement_id: str) -> dict[str, Any]:
+        """Return the deterministic materialized workspace shared through an encrypted relay."""
+
+        return {
+            "schema": "h1dr4.workspace.snapshot.v1",
+            "engagement": self.get_engagement(engagement_id).to_dict(),
+            "graph": self.get_graph(engagement_id),
+            "exported_at": _now(),
+        }
+
+    def import_workspace(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        """Idempotently merge a decrypted remote snapshot into this local Sibyl."""
+
+        if snapshot.get("schema") != "h1dr4.workspace.snapshot.v1":
+            raise ValueError("workspace_snapshot_schema_unsupported")
+        engagement = snapshot.get("engagement")
+        incoming_graph = snapshot.get("graph")
+        if not isinstance(engagement, dict) or not isinstance(incoming_graph, dict):
+            raise ValueError("workspace_snapshot_invalid")
+        engagement_id = str(engagement.get("engagement_id") or "")
+        if not engagement_id:
+            raise ValueError("workspace_snapshot_engagement_required")
+
+        try:
+            local_engagement = self.get_engagement(engagement_id).to_dict()
+        except EngagementNotFoundError:
+            local_engagement = None
+        if local_engagement:
+            immutable = ("target", "mode", "scope", "target_allowlist")
+            if any(local_engagement.get(key) != engagement.get(key) for key in immutable):
+                raise ValueError("workspace_snapshot_scope_conflict")
+        else:
+            self.client.set_entity(
+                "engagement",
+                engagement_id,
+                redact(engagement),
+                status="active",
+            )
+            self.client.set_state(self._graph_key(engagement_id), _new_graph())
+
+        graph = self.get_graph(engagement_id)
+        merged = 0
+        for collection in _new_graph():
+            incoming_items = incoming_graph.get(collection) or []
+            if not isinstance(incoming_items, list):
+                raise ValueError("workspace_snapshot_graph_invalid")
+            by_id = {
+                str(item.get("id")): item
+                for item in graph[collection]
+                if isinstance(item, dict) and item.get("id")
+            }
+            for incoming in incoming_items:
+                if not isinstance(incoming, dict) or not incoming.get("id"):
+                    continue
+                item_id = str(incoming["id"])
+                existing = by_id.get(item_id)
+                if existing is None:
+                    copied = redact(incoming)
+                    graph[collection].append(copied)
+                    by_id[item_id] = copied
+                    merged += 1
+                    continue
+                before = json.dumps(existing, sort_keys=True, separators=(",", ":"))
+                self._merge_workspace_item(existing, redact(incoming))
+                after = json.dumps(existing, sort_keys=True, separators=(",", ":"))
+                if before != after:
+                    merged += 1
+
+        graph["findings"] = [
+            item for item in graph["observations"] if item.get("kind") == "finding"
+        ]
+        self._save_graph(engagement_id, graph)
+        self._event(
+            engagement_id,
+            "workspace_synced",
+            {
+                "merged_records": merged,
+                "remote_exported_at": snapshot.get("exported_at"),
+            },
+        )
+        return {"engagement_id": engagement_id, "merged_records": merged}
+
+    @staticmethod
+    def _merge_workspace_item(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
+        assurance_rank = {"asserted": 0, "attested": 1, "verified": 2}
+        time_fields = (
+            "promoted_at",
+            "completed_at",
+            "last_seen_at",
+            "recorded_at",
+            "created_at",
+        )
+        existing_time = max((str(existing.get(key) or "") for key in time_fields), default="")
+        incoming_time = max((str(incoming.get(key) or "") for key in time_fields), default="")
+        prefer_incoming = incoming_time >= existing_time
+        if assurance_rank.get(str(incoming.get("assurance") or ""), -1) > assurance_rank.get(
+            str(existing.get("assurance") or ""), -1
+        ):
+            prefer_incoming = True
+        if prefer_incoming:
+            existing.update(incoming)
+
+        for key in (
+            "event_ids",
+            "entity_ids",
+            "finding_ids",
+            "job_ids",
+            "h3retik_session_ids",
+        ):
+            values = [*(existing.get(key) or []), *(incoming.get(key) or [])]
+            if values:
+                existing[key] = list(dict.fromkeys(str(value) for value in values if value))
+        for key in ("attributes", "metadata", "evidence", "presentation", "proof"):
+            left = existing.get(key)
+            right = incoming.get(key)
+            if isinstance(left, dict) and isinstance(right, dict):
+                existing[key] = {**left, **right} if prefer_incoming else {**right, **left}
+
     def get_graph(self, engagement_id: str) -> dict[str, list[dict[str, Any]]]:
         self.get_engagement(engagement_id)
         state = self.client.get_state(self._graph_key(engagement_id))
@@ -145,9 +263,7 @@ class SibylAttackMemory:
                 event["artifact_id"] = str(artifact.get("id") or "")
             self._merge_telemetry_relationships(graph, event)
 
-    def record_telemetry(
-        self, engagement_id: str, event: dict[str, Any]
-    ) -> dict[str, Any]:
+    def record_telemetry(self, engagement_id: str, event: dict[str, Any]) -> dict[str, Any]:
         graph = self.get_graph(engagement_id)
         existing = next(
             (
@@ -291,8 +407,7 @@ class SibylAttackMemory:
                 )
                 for relationship in event.get("relationships") or []
                 if "event" in {relationship.get("from"), relationship.get("to")}
-                and {relationship.get("from"), relationship.get("to")}
-                != {"event", "target"}
+                and {relationship.get("from"), relationship.get("to")} != {"event", "target"}
             )
         )
         if not entity_ids:
@@ -378,7 +493,8 @@ class SibylAttackMemory:
             if not entity_id:
                 continue
             existing = next(
-                (item for item in graph["entities"] if item.get("id") == entity_id), None
+                (item for item in graph["entities"] if item.get("id") == entity_id),
+                None,
             )
             event_ids = list(dict.fromkeys([*((existing or {}).get("event_ids") or []), event_id]))
             session_ids = list(
@@ -419,8 +535,7 @@ class SibylAttackMemory:
                 "type": incoming.get("type"),
                 "label": incoming.get("label") or entity_id,
                 "layer": incoming.get("layer") or (existing or {}).get("layer", ""),
-                "parent_id": incoming.get("parent_id")
-                or (existing or {}).get("parent_id", ""),
+                "parent_id": incoming.get("parent_id") or (existing or {}).get("parent_id", ""),
                 "metadata": metadata,
                 "assurance": assurance,
                 "actor": actor,
@@ -491,9 +606,7 @@ class SibylAttackMemory:
             "h3retik_session_id": event.get("h3retik_session_id", ""),
             "job_id": proof.get("job_id", ""),
             "telemetry_event_id": event.get("id", ""),
-            "recorded_at": (existing or {}).get(
-                "recorded_at", event.get("recorded_at", _now())
-            ),
+            "recorded_at": (existing or {}).get("recorded_at", event.get("recorded_at", _now())),
         }
         if existing:
             existing.update(payload)
@@ -508,7 +621,10 @@ class SibylAttackMemory:
         if not record_id:
             return None
         for collection in ("observations", "attempts"):
-            match = next((item for item in graph[collection] if item.get("id") == record_id), None)
+            match = next(
+                (item for item in graph[collection] if item.get("id") == record_id),
+                None,
+            )
             if match:
                 return match
         return None
@@ -564,24 +680,22 @@ class SibylAttackMemory:
             if not entity_id:
                 continue
             parent_id = str(entity.get("parent_id") or "target")
-            if entity.get("type") not in {"target", "agent", "session", "job", "technique"}:
-                relationships.append(
-                    {"from": parent_id, "to": entity_id, "type": "contains"}
-                )
+            if entity.get("type") not in {
+                "target",
+                "agent",
+                "session",
+                "job",
+                "technique",
+            }:
+                relationships.append({"from": parent_id, "to": entity_id, "type": "contains"})
         record = self._telemetry_record(graph, record_id)
         for entity_id in (record or {}).get("entity_ids") or []:
-            relationships.append(
-                {"from": record_id, "to": entity_id, "type": "observed_on"}
-            )
+            relationships.append({"from": record_id, "to": entity_id, "type": "observed_on"})
         if artifact_id:
             for entity_id in artifact.get("entity_ids") or []:
-                relationships.append(
-                    {"from": entity_id, "to": artifact_id, "type": "produced"}
-                )
+                relationships.append({"from": entity_id, "to": artifact_id, "type": "produced"})
             for finding_id in artifact.get("finding_ids") or []:
-                relationships.append(
-                    {"from": artifact_id, "to": finding_id, "type": "supports"}
-                )
+                relationships.append({"from": artifact_id, "to": finding_id, "type": "supports"})
         for relationship in event.get("relationships") or []:
             source = event_id if relationship.get("from") == "event" else relationship.get("from")
             destination = event_id if relationship.get("to") == "event" else relationship.get("to")

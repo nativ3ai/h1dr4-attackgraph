@@ -30,6 +30,7 @@ dev = [
 [project.scripts]
 h1dr4-attackgraph = "h1dr4_attackgraph.server:main"
 h1dr4-attackgraph-dashboard = "h1dr4_attackgraph.dashboard:main"
+attackgraph = "h1dr4_attackgraph.relay_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/h1dr4_attackgraph"]

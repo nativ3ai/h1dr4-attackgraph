@@ -184,6 +184,42 @@ to one combined operation. Session bindings are operational metadata only;
 H3RETIK wallet and access credentials stay in environment variables outside
 the dashboard.
 
+### Private multiplayer workspaces
+
+AttackGraph can synchronize an engagement between operators without uploading
+the Sibyl database or plaintext intelligence. Each device keeps its own local
+Sibyl. The H1DR4 relay stores only AES-256-GCM encrypted, Ed25519-signed
+workspace snapshots, opaque identifiers, cursors, and membership metadata.
+
+Host an existing engagement and create a one-use operator invite:
+
+```bash
+uv run attackgraph host eng-example --name WEB-01
+uv run attackgraph invite eng-example --role operator --hours 24
+```
+
+On another machine, using the same absolute database and relay-state paths as
+its MCP configuration:
+
+```bash
+uv run attackgraph join 'h1dr4-ag1:REDACTED' --name AUTH-02
+uv run attackgraph status
+```
+
+The same host, invite, join, sync, member-list, and revoke operations are
+available as MCP tools, so a fresh Codex can join without leaving the agent
+workflow.
+
+The invite code contains key material and must be treated as a secret. Relay
+access tokens and workspace keys are kept in the mode-0600 file selected by
+`ATTACKGRAPH_RELAY_STATE_PATH`; they are never written to Sibyl or returned by
+an MCP status tool. After joining, ordinary MCP reads pull remote events before
+building a brief, while writes merge and publish a new encrypted snapshot.
+Local reads and writes remain available if the relay is temporarily offline.
+
+See [docs/PRIVATE_RELAY.md](docs/PRIVATE_RELAY.md) for the protocol, deployment
+boundary, revocation limitation, and two-client smoke test.
+
 For a locked deployment, set the relying-party values explicitly:
 
 ```bash
