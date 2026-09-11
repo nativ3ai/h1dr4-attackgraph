@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
+import time
+import webbrowser
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +46,17 @@ def _parser() -> argparse.ArgumentParser:
     host.add_argument("engagement_id")
     host.add_argument("--relay", default=os.getenv("ATTACKGRAPH_RELAY_URL", DEFAULT_RELAY_URL))
     host.add_argument("--name", default=os.getenv("ATTACKGRAPH_RELAY_ACTOR_NAME", ""))
+    host.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Print the approval URL without opening it.",
+    )
+    host.add_argument(
+        "--approval-timeout",
+        type=int,
+        default=600,
+        help="Seconds to wait for passkey approval.",
+    )
 
     invite = commands.add_parser("invite", help="Create a one-use encrypted join code.")
     invite.add_argument("engagement_id")
@@ -74,13 +88,38 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         return client.status()
     service = _service(state)
     if args.command == "host":
-        return client.host_workspace(
+        bootstrap_token = os.getenv("ATTACKGRAPH_RELAY_BOOTSTRAP_TOKEN", "")
+        if bootstrap_token:
+            return client.host_workspace(
+                service,
+                args.engagement_id,
+                relay_url=args.relay,
+                actor_name=args.name,
+                bootstrap_token=bootstrap_token,
+            )
+        authorization = client.begin_host_authorization(
             service,
             args.engagement_id,
             relay_url=args.relay,
             actor_name=args.name,
-            bootstrap_token=os.getenv("ATTACKGRAPH_RELAY_BOOTSTRAP_TOKEN", ""),
         )
+        if authorization.get("status") == "hosted":
+            return authorization
+        print(
+            f"Approve AttackGraph workspace creation:\n{authorization['verification_url']}\n"
+            f"Code: {authorization['user_code']}",
+            file=sys.stderr,
+        )
+        if not args.no_browser:
+            webbrowser.open(str(authorization["verification_url"]))
+        deadline = time.monotonic() + max(30, int(args.approval_timeout))
+        interval = max(1, int(authorization.get("interval_seconds") or 2))
+        while time.monotonic() < deadline:
+            result = client.complete_host_authorization(service, args.engagement_id)
+            if result.get("status") == "hosted":
+                return result
+            time.sleep(interval)
+        raise RelayError("device_authorization_timed_out")
     if args.command == "invite":
         return client.create_invite(args.engagement_id, role=args.role, hours=args.hours)
     if args.command == "join":

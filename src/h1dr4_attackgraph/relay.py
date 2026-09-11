@@ -103,9 +103,12 @@ class RelayStateStore:
 
     def load(self) -> dict[str, Any]:
         if not self.path.exists():
-            return {"version": 1, "workspaces": {}}
+            return {"version": 1, "workspaces": {}, "pending_authorizations": {}}
         payload = json.loads(self.path.read_text())
         if payload.get("version") != 1 or not isinstance(payload.get("workspaces"), dict):
+            raise RelayError("relay_state_version_unsupported")
+        payload.setdefault("pending_authorizations", {})
+        if not isinstance(payload["pending_authorizations"], dict):
             raise RelayError("relay_state_version_unsupported")
         return payload
 
@@ -161,6 +164,19 @@ class RelayStateStore:
 
     def joined_ids(self) -> list[str]:
         return list(self.load()["workspaces"])
+
+    def pending_authorization(self, workspace_id: str) -> dict[str, Any] | None:
+        return self.load()["pending_authorizations"].get(workspace_id)
+
+    def put_pending_authorization(self, workspace_id: str, value: dict[str, Any]) -> None:
+        state = self.load()
+        state["pending_authorizations"][workspace_id] = value
+        self.save(state)
+
+    def clear_pending_authorization(self, workspace_id: str) -> None:
+        state = self.load()
+        state["pending_authorizations"].pop(workspace_id, None)
+        self.save(state)
 
 
 class AttackGraphRelayClient:
@@ -218,6 +234,7 @@ class AttackGraphRelayClient:
         relay_url: str = DEFAULT_RELAY_URL,
         actor_name: str = "",
         bootstrap_token: str = "",
+        creation_token: str = "",
     ) -> dict[str, Any]:
         if self.state.workspace(engagement_id):
             return self.status(engagement_id)
@@ -229,7 +246,7 @@ class AttackGraphRelayClient:
         payload = self._request(
             "POST",
             f"{base}/workspaces",
-            access_token=bootstrap_token,
+            access_token=creation_token or bootstrap_token,
             json_body={
                 "workspace_id": engagement_id,
                 "title": f"Private workspace {engagement_id[-8:]}",
@@ -251,6 +268,104 @@ class AttackGraphRelayClient:
         )
         self.push_workspace(service, engagement_id)
         return self.status(engagement_id)
+
+    def begin_host_authorization(
+        self,
+        service: AttackGraphService,
+        engagement_id: str,
+        *,
+        relay_url: str = DEFAULT_RELAY_URL,
+        actor_name: str = "",
+    ) -> dict[str, Any]:
+        if self.state.workspace(engagement_id):
+            return {"status": "hosted", **self.status(engagement_id)}
+        existing = self.state.pending_authorization(engagement_id)
+        if existing:
+            return {
+                "status": "approval_required",
+                "workspace_id": engagement_id,
+                "verification_url": existing["verification_url"],
+                "user_code": existing["user_code"],
+                "expires_at": existing["expires_at"],
+                "interval_seconds": existing["interval_seconds"],
+            }
+        service.memory.get_engagement(engagement_id)
+        actor_id, name, signing_key = self.state.identity(actor_name)
+        service.memory.actor_id = actor_id
+        service.memory.actor_name = name
+        base = _relay_url(relay_url)
+        payload = self._request(
+            "POST",
+            f"{base}/device/authorizations",
+            json_body={
+                "actor_id": actor_id,
+                "actor_name": name,
+                "signing_public_key": _public_key(signing_key),
+            },
+        )
+        required = (
+            "request_id",
+            "verification_url",
+            "user_code",
+            "poll_token",
+            "expires_at",
+        )
+        if not all(payload.get(item) for item in required):
+            raise RelayError("device_authorization_response_invalid")
+        pending = {
+            "relay_url": base,
+            "request_id": str(payload["request_id"]),
+            "verification_url": str(payload["verification_url"]),
+            "user_code": str(payload["user_code"]),
+            "poll_token": str(payload["poll_token"]),
+            "expires_at": str(payload["expires_at"]),
+            "interval_seconds": max(1, int(payload.get("interval_seconds") or 2)),
+            "actor_name": name,
+        }
+        self.state.put_pending_authorization(engagement_id, pending)
+        return {
+            "status": "approval_required",
+            "workspace_id": engagement_id,
+            "verification_url": pending["verification_url"],
+            "user_code": pending["user_code"],
+            "expires_at": pending["expires_at"],
+            "interval_seconds": pending["interval_seconds"],
+        }
+
+    def complete_host_authorization(
+        self,
+        service: AttackGraphService,
+        engagement_id: str,
+    ) -> dict[str, Any]:
+        pending = self.state.pending_authorization(engagement_id)
+        if not pending:
+            raise RelayError("device_authorization_not_started")
+        payload = self._request(
+            "POST",
+            f"{pending['relay_url']}/device/authorizations/{pending['request_id']}/token",
+            access_token=str(pending["poll_token"]),
+        )
+        if payload.get("status") == "pending":
+            return {
+                "status": "pending",
+                "workspace_id": engagement_id,
+                "verification_url": pending["verification_url"],
+                "user_code": pending["user_code"],
+                "expires_at": pending["expires_at"],
+                "interval_seconds": pending["interval_seconds"],
+            }
+        creation_token = str(payload.get("creation_token") or "")
+        if payload.get("status") != "approved" or not creation_token:
+            raise RelayError("device_authorization_response_invalid")
+        result = self.host_workspace(
+            service,
+            engagement_id,
+            relay_url=str(pending["relay_url"]),
+            actor_name=str(pending.get("actor_name") or ""),
+            creation_token=creation_token,
+        )
+        self.state.clear_pending_authorization(engagement_id)
+        return {"status": "hosted", **result}
 
     def create_invite(
         self,

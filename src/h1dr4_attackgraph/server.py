@@ -400,13 +400,25 @@ def attackgraph_host_private_workspace(
     relay_url: str = DEFAULT_RELAY_URL,
     actor_name: str = "",
 ) -> dict[str, Any]:
-    """Host an existing engagement through the H1DR4 ciphertext-only private relay."""
-    return get_relay().client.host_workspace(
-        get_service(),
+    """Host via H1DR4. First call returns a passkey URL; call again after approval."""
+    relay = get_relay().client
+    service = get_service()
+    bootstrap_token = os.getenv("ATTACKGRAPH_RELAY_BOOTSTRAP_TOKEN", "")
+    if bootstrap_token:
+        return relay.host_workspace(
+            service,
+            engagement_id,
+            relay_url=relay_url,
+            actor_name=actor_name,
+            bootstrap_token=bootstrap_token,
+        )
+    if relay.state.pending_authorization(engagement_id):
+        return relay.complete_host_authorization(service, engagement_id)
+    return relay.begin_host_authorization(
+        service,
         engagement_id,
         relay_url=relay_url,
         actor_name=actor_name,
-        bootstrap_token=os.getenv("ATTACKGRAPH_RELAY_BOOTSTRAP_TOKEN", ""),
     )
 
 

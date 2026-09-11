@@ -198,6 +198,12 @@ uv run attackgraph host eng-example --name WEB-01
 uv run attackgraph invite eng-example --role operator --hours 24
 ```
 
+`host` opens `h1dr4.dev` for a passkey approval and then continues
+automatically. It needs no shared API secret, wallet, payment, or hosted Sibyl.
+Use `--no-browser` on a headless machine and open the printed URL on another
+device. See [Private workspace relay](docs/PRIVATE_RELAY.md) for the protocol,
+trust boundary, MCP flow, revocation, and local development smoke.
+
 On another machine, using the same absolute database and relay-state paths as
 its MCP configuration:
 

@@ -74,17 +74,29 @@ export ATTACKGRAPH_RELAY_STATE_PATH=/absolute/path/attackgraph/relay.json
 export ATTACKGRAPH_RELAY_URL=https://h1dr4.dev/api/v1/attackgraph
 ```
 
-Creating a new hosted workspace is currently a private-beta operation. The
-owner needs a short-lived `ATTACKGRAPH_RELAY_BOOTSTRAP_TOKEN` issued by H1DR4
-for the `host` call only. The bootstrap token is not a workspace credential and
-must not be sent to collaborators. A collaborator needs only the one-use invite
-code; redemption returns an independent, revocable membership credential.
+Creating a hosted workspace is self-service and does not require an API key,
+wallet, payment, or account password. `attackgraph host` requests a short-lived
+device authorization, opens the approval page on `h1dr4.dev`, and waits for a
+passkey confirmation. H1DR4 then returns a five-minute, one-use creation grant
+bound to that client's Ed25519 key. The grant cannot create a workspace for a
+different operator and is consumed by the first successful host request.
+
+The passkey is a stable human-presence credential, not a legal identity or an
+authorization to test a target. Engagement scope and permission remain the
+operator's responsibility. The server stores the passkey public credential;
+the private passkey remains in the device, password manager, or security key.
 
 Owner:
 
 ```bash
 uv run attackgraph host eng-example --name WEB-01
 uv run attackgraph invite eng-example --role operator --hours 24
+```
+
+On a headless machine, print the same approval URL instead of opening it:
+
+```bash
+uv run attackgraph host eng-example --name WEB-01 --no-browser
 ```
 
 Collaborator, on another machine:
@@ -96,8 +108,10 @@ uv run attackgraph join 'h1dr4-ag1:REDACTED' --name AUTH-02
 uv run attackgraph sync eng-example
 ```
 
-The equivalent MCP tools are
-`attackgraph_host_private_workspace`, `attackgraph_create_private_invite`,
+The equivalent MCP tool `attackgraph_host_private_workspace` is deliberately
+non-blocking: its first call returns `status: approval_required` plus the
+passkey URL; call it again after approval to create the workspace. The other
+tools are `attackgraph_create_private_invite`,
 `attackgraph_join_private_workspace`,
 `attackgraph_sync_private_workspace`,
 `attackgraph_private_workspace_members`, and
@@ -139,8 +153,9 @@ The smoke creates two isolated Sibyl databases, joins the second operator,
 publishes an exhausted attack path, recalls it from the first database, and
 asserts that neither the target nor the path appears in relay-visible JSON.
 
-Run the same receipt against a deployed relay by supplying its URL and a
-bootstrap token through the environment:
+Run the same receipt against a deployed relay with an administrator-issued
+bootstrap token. This bypass is only for automated service smoke tests; normal
+operators use the passkey flow above:
 
 ```bash
 ATTACKGRAPH_RELAY_BOOTSTRAP_TOKEN=REDACTED \

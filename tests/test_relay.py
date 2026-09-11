@@ -19,10 +19,32 @@ class RelayFixture:
         self.events: list[dict] = []
         self.tokens = {"bootstrap": "bootstrap"}
         self.members: dict[str, dict] = {}
+        self.device_approved = False
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path.removeprefix("/v1/attackgraph")
         body = json.loads(request.content or b"{}")
+        if request.method == "POST" and path == "/device/authorizations":
+            return self.response(
+                request,
+                201,
+                {
+                    "request_id": "h1d_fixture",
+                    "verification_url": "https://h1dr4.dev/operation-red/attackgraph/authorize?request=h1d_fixture&code=DEMO-CODE",
+                    "user_code": "DEMO-CODE",
+                    "poll_token": "h1p_fixture",
+                    "expires_at": "2099-01-01T00:00:00Z",
+                    "interval_seconds": 1,
+                },
+            )
+        if request.method == "POST" and path == "/device/authorizations/h1d_fixture/token":
+            if not self.device_approved:
+                return self.response(request, 202, {"status": "pending"})
+            return self.response(
+                request,
+                200,
+                {"status": "approved", "creation_token": "h1w_fixture"},
+            )
         if request.method == "POST" and path == "/workspaces":
             self.tokens["owner-token"] = "owner"
             self.members["member-owner"] = {
@@ -231,3 +253,41 @@ def test_relay_state_is_created_private_and_untrusted_host_is_rejected(
             relay_url="https://attacker.example/v1/attackgraph",
             bootstrap_token="must-not-leak",
         )
+
+
+def test_device_authorization_hosts_without_shared_bootstrap_secret(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATTACKGRAPH_RELAY_ALLOWED_HOSTS", "relay.test")
+    relay = RelayFixture()
+    client = AttackGraphRelayClient(
+        RelayStateStore(tmp_path / "owner-relay.json"),
+        client=httpx.Client(transport=httpx.MockTransport(relay.handler)),
+    )
+    owner_service = service(tmp_path / "owner.db", "owner")
+    engagement = owner_service.open_engagement(
+        title="Authorized Target",
+        target="https://owned.example",
+        mode="local_lab",
+        scope="Authorized fixture",
+        target_allowlist=["https://owned.example"],
+    )
+
+    started = client.begin_host_authorization(
+        owner_service,
+        engagement["engagement_id"],
+        relay_url="https://relay.test/v1/attackgraph",
+        actor_name="WEB-01",
+    )
+    assert started["status"] == "approval_required"
+    assert started["user_code"] == "DEMO-CODE"
+    assert "poll_token" not in started
+    waiting = client.complete_host_authorization(owner_service, engagement["engagement_id"])
+    assert waiting["status"] == "pending"
+
+    relay.device_approved = True
+    hosted = client.complete_host_authorization(owner_service, engagement["engagement_id"])
+    assert hosted["status"] == "hosted"
+    assert hosted["workspaces"][0]["role"] == "owner"
+    assert client.state.pending_authorization(engagement["engagement_id"]) is None
