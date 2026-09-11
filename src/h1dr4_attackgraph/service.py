@@ -30,6 +30,7 @@ class AttackGraphService:
         identity: IdentityStore | None = None,
         principal_type: str = "human",
         principal_id: str = "",
+        actor_id: str = "",
         actor_name: str = "",
     ) -> None:
         self.identity = identity
@@ -38,8 +39,8 @@ class AttackGraphService:
         self.memory = SibylAttackMemory(
             db_path,
             operator_id,
-            actor_id=principal_id or operator_id,
-            actor_name=actor_name or principal_id or operator_id,
+            actor_id=actor_id or principal_id or operator_id,
+            actor_name=actor_name or actor_id or principal_id or operator_id,
             actor_type=principal_type,
         )
         self.h1dr4 = h1dr4 or H1dr4Client()

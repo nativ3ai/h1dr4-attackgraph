@@ -7,6 +7,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from .identity import IdentityStore
+from .relay import DEFAULT_RELAY_URL, RelayCoordinator
 from .service import AttackGraphService, ConfigurationError
 
 mcp = FastMCP(
@@ -22,20 +23,40 @@ mcp = FastMCP(
 
 
 @lru_cache(maxsize=1)
+def get_relay() -> RelayCoordinator:
+    return RelayCoordinator.from_env()
+
+
+@lru_cache(maxsize=1)
 def get_service() -> AttackGraphService:
     identity = IdentityStore(os.getenv("ATTACKGRAPH_CONTROL_DB_PATH", ".attackgraph/control.db"))
     token = os.getenv("ATTACKGRAPH_AGENT_TOKEN", "")
     agent = identity.authenticate_agent(token) if token else None
     if token and not agent:
         raise ConfigurationError("ATTACKGRAPH_AGENT_TOKEN is invalid or revoked")
+    relay_state = get_relay().client.state.load()
     return AttackGraphService(
         db_path=os.getenv("ATTACKGRAPH_DB_PATH", ".attackgraph/sibyl.db"),
         operator_id=os.getenv("ATTACKGRAPH_OPERATOR_ID", "local-operator"),
         identity=identity,
         principal_type="agent" if agent else "human",
         principal_id=str(agent["agent_id"]) if agent else "",
-        actor_name=str(agent["name"]) if agent else "local-operator",
+        actor_id=str(relay_state.get("actor_id") or ""),
+        actor_name=str(
+            relay_state.get("actor_name") or (agent["name"] if agent else "local-operator")
+        ),
     )
+
+
+def _read_service(engagement_id: str = "") -> AttackGraphService:
+    service = get_service()
+    get_relay().pull_best_effort(service, engagement_id)
+    return service
+
+
+def _after_write(service: AttackGraphService, engagement_id: str, result: Any) -> Any:
+    get_relay().push_best_effort(service, engagement_id)
+    return result
 
 
 @mcp.tool()
@@ -63,19 +84,19 @@ def attackgraph_open_engagement(
 @mcp.tool()
 def attackgraph_list_engagements() -> list[dict[str, Any]]:
     """List this operator's isolated Sibyl engagements."""
-    return get_service().list_engagements()
+    return _read_service().list_engagements()
 
 
 @mcp.tool()
 def attackgraph_get_context(engagement_id: str, event_limit: int = 25) -> dict[str, Any]:
     """Return the complete hot graph plus recent append-only Sibyl events."""
-    return get_service().context(engagement_id, event_limit=event_limit)
+    return _read_service(engagement_id).context(engagement_id, event_limit=event_limit)
 
 
 @mcp.tool()
 def attackgraph_get_brief(engagement_id: str) -> dict[str, Any]:
     """Return a compact handoff for the connected agent to reason over."""
-    return get_service().brief(engagement_id)
+    return _read_service(engagement_id).brief(engagement_id)
 
 
 @mcp.tool()
@@ -106,7 +127,8 @@ def attackgraph_report_event(
     This is an agent assertion and cannot self-declare verified. Reuse the same
     idempotency_key when a later executor attestation should promote it.
     """
-    return get_service().report_telemetry(
+    service = _read_service(engagement_id)
+    result = service.report_telemetry(
         engagement_id,
         event_type=event_type,
         summary=summary,
@@ -122,6 +144,7 @@ def attackgraph_report_event(
         attributes=attributes,
         idempotency_key=idempotency_key,
     )
+    return _after_write(service, engagement_id, result)
 
 
 @mcp.tool()
@@ -154,7 +177,8 @@ def attackgraph_ingest_h3retik_event(
     high-impact posture. This adapter-only tool requires the server-configured
     H3RETIK attestation token; do not expose that credential to agent workers.
     """
-    return get_service().ingest_h3retik_telemetry(
+    service = _read_service(engagement_id)
+    result = service.ingest_h3retik_telemetry(
         engagement_id,
         event_type=event_type,
         summary=summary,
@@ -176,6 +200,7 @@ def attackgraph_ingest_h3retik_event(
         idempotency_key=idempotency_key,
         attestation_token=attestation_token,
     )
+    return _after_write(service, engagement_id, result)
 
 
 @mcp.tool()
@@ -193,7 +218,8 @@ def attackgraph_record_observation(
     here remain unverified; only correlated executor telemetry can promote a
     high-impact dashboard state.
     """
-    return get_service().record_observation(
+    service = _read_service(engagement_id)
+    result = service.record_observation(
         engagement_id,
         statement=statement,
         source=source,
@@ -201,6 +227,7 @@ def attackgraph_record_observation(
         kind=kind,
         evidence=evidence,
     )
+    return _after_write(service, engagement_id, result)
 
 
 @mcp.tool()
@@ -208,7 +235,9 @@ def attackgraph_record_hypothesis(
     engagement_id: str, statement: str, status: str = "open"
 ) -> dict[str, Any]:
     """Record an open, confirmed, or rejected attack hypothesis."""
-    return get_service().record_hypothesis(engagement_id, statement=statement, status=status)
+    service = _read_service(engagement_id)
+    result = service.record_hypothesis(engagement_id, statement=statement, status=status)
+    return _after_write(service, engagement_id, result)
 
 
 @mcp.tool()
@@ -220,13 +249,15 @@ def attackgraph_record_attempt(
     evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Record an attempted path so future sessions do not blindly repeat it."""
-    return get_service().record_attempt(
+    service = _read_service(engagement_id)
+    result = service.record_attempt(
         engagement_id,
         approach=approach,
         outcome=outcome,
         exhausted=exhausted,
         evidence=evidence,
     )
+    return _after_write(service, engagement_id, result)
 
 
 @mcp.tool()
@@ -242,7 +273,8 @@ def attackgraph_request_action(
     h3retik_session_id: str = "",
 ) -> dict[str, Any]:
     """Policy-check and record an action plan. This does not execute the command."""
-    return get_service().request_action(
+    service = _read_service(engagement_id)
+    result = service.request_action(
         engagement_id,
         target=target,
         lane=lane,
@@ -253,6 +285,7 @@ def attackgraph_request_action(
         budget_usdc=budget_usdc,
         h3retik_session_id=h3retik_session_id,
     )
+    return _after_write(service, engagement_id, result)
 
 
 @mcp.tool()
@@ -324,9 +357,11 @@ def attackgraph_execute_approved_h3retik_job(
     engagement_id: str, action_id: str, approval_code: str
 ) -> dict[str, Any]:
     """Execute one already-scoped action in an existing session after human approval."""
-    return get_service().execute_approved_h3retik_job(
+    service = _read_service(engagement_id)
+    result = service.execute_approved_h3retik_job(
         engagement_id, action_id=action_id, approval_code=approval_code
     )
+    return _after_write(service, engagement_id, result)
 
 
 @mcp.tool()
@@ -338,13 +373,15 @@ def attackgraph_ingest_h3retik_result(
     status: str = "completed",
 ) -> dict[str, Any]:
     """Import externally run H3RETIK output as sanitized Sibyl evidence."""
-    return get_service().ingest_h3retik_result(
+    service = _read_service(engagement_id)
+    recorded = service.ingest_h3retik_result(
         engagement_id,
         action_id=action_id,
         job_id=job_id,
         result=result,
         status=status,
     )
+    return _after_write(service, engagement_id, recorded)
 
 
 @mcp.tool()
@@ -352,7 +389,104 @@ def attackgraph_create_regression(
     engagement_id: str, name: str, check: str, expected: str
 ) -> dict[str, Any]:
     """Turn a confirmed finding into a durable regression check."""
-    return get_service().create_regression(engagement_id, name=name, check=check, expected=expected)
+    service = _read_service(engagement_id)
+    result = service.create_regression(engagement_id, name=name, check=check, expected=expected)
+    return _after_write(service, engagement_id, result)
+
+
+@mcp.tool()
+def attackgraph_host_private_workspace(
+    engagement_id: str,
+    relay_url: str = DEFAULT_RELAY_URL,
+    actor_name: str = "",
+) -> dict[str, Any]:
+    """Host via H1DR4. First call returns a passkey URL; call again after approval."""
+    relay = get_relay().client
+    service = get_service()
+    bootstrap_token = os.getenv("ATTACKGRAPH_RELAY_BOOTSTRAP_TOKEN", "")
+    if bootstrap_token:
+        return relay.host_workspace(
+            service,
+            engagement_id,
+            relay_url=relay_url,
+            actor_name=actor_name,
+            bootstrap_token=bootstrap_token,
+        )
+    if relay.state.pending_authorization(engagement_id):
+        return relay.complete_host_authorization(service, engagement_id)
+    return relay.begin_host_authorization(
+        service,
+        engagement_id,
+        relay_url=relay_url,
+        actor_name=actor_name,
+    )
+
+
+@mcp.tool()
+def attackgraph_create_private_invite(
+    engagement_id: str,
+    role: str = "operator",
+    hours: int = 24,
+) -> dict[str, Any]:
+    """Create a one-use encrypted workspace invite. Treat the returned code as a secret."""
+    return get_relay().client.create_invite(engagement_id, role=role, hours=hours)
+
+
+@mcp.tool()
+def attackgraph_join_private_workspace(
+    invite_code: str,
+    actor_name: str,
+) -> dict[str, Any]:
+    """Join a private workspace with a one-use secret invite and hydrate local Sibyl."""
+    return get_relay().client.join_workspace(
+        get_service(),
+        invite_code,
+        actor_name=actor_name,
+    )
+
+
+@mcp.tool()
+def attackgraph_private_workspace_members(engagement_id: str) -> dict[str, Any]:
+    """List the authorized members and revocation state for a private workspace."""
+    return {
+        "workspace_id": engagement_id,
+        "members": get_relay().client.members(engagement_id),
+    }
+
+
+@mcp.tool()
+def attackgraph_revoke_private_workspace_member(
+    engagement_id: str,
+    member_id: str,
+) -> dict[str, Any]:
+    """Revoke a private relay member. Only the workspace owner may do this."""
+    return {
+        "workspace_id": engagement_id,
+        "member": get_relay().client.revoke_member(engagement_id, member_id),
+    }
+
+
+@mcp.tool()
+def attackgraph_sync_private_workspace(engagement_id: str) -> dict[str, Any]:
+    """Pull encrypted remote events into local Sibyl and publish the merged snapshot."""
+    service = get_service()
+    pulled = get_relay().pull(service, engagement_id)
+    pushed = get_relay().push(service, engagement_id)
+    return {
+        "engagement_id": engagement_id,
+        "pulled_events": pulled,
+        "published": bool(pushed),
+    }
+
+
+@mcp.tool()
+def attackgraph_private_workspace_status() -> dict[str, Any]:
+    """List locally joined private workspaces without exposing relay credentials or keys."""
+    coordinator = get_relay()
+    return {
+        **coordinator.client.status(),
+        "last_sync_error": coordinator.last_error or None,
+    }
 
 
 @mcp.tool()
